@@ -16,6 +16,16 @@ interface Order {
 
 const steps = ['confirmed', 'processing', 'shipped', 'delivered'];
 
+/** Normalized live tracking shape returned by /api/shiprocket/track. */
+interface LiveTracking {
+  awb: string;
+  courierName: string;
+  currentStatus: string;
+  estimatedDelivery: string;
+  trackUrl: string;
+  activities: Array<{ date: string; status: string; activity: string; location: string }>;
+}
+
 export default function TrackPage() {
   const router = useRouter();
   const [queryOrderId, setQueryOrderId] = useState('');
@@ -23,6 +33,52 @@ export default function TrackPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
   const [message, setMessage] = useState('');
+
+  // Live courier tracking (Shiprocket) by AWB. Additive to the local timeline.
+  // Prefill the AWB from the URL (?awb=) using a lazy initializer so we avoid
+  // any setState-in-effect for the initial value.
+  const [awbInput, setAwbInput] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return (new URLSearchParams(window.location.search).get('awb') || '').trim();
+  });
+  const [liveTracking, setLiveTracking] = useState<LiveTracking | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState('');
+
+  /** Fetches live shipment tracking from the server-side Shiprocket route. */
+  const trackLive = async (awb: string) => {
+    const value = awb.trim();
+    if (!value) {
+      setLiveError('Please enter your AWB / tracking number.');
+      return;
+    }
+    setLiveLoading(true);
+    setLiveError('');
+    setLiveTracking(null);
+    try {
+      const res = await fetch(`/api/shiprocket/track?awb=${encodeURIComponent(value)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error?.message || 'Unable to fetch tracking details.');
+      }
+      setLiveTracking(data.data as LiveTracking);
+    } catch (error) {
+      setLiveError(error instanceof Error ? error.message : 'Unable to fetch tracking details.');
+    } finally {
+      setLiveLoading(false);
+    }
+  };
+
+  // Auto-track once on mount when an AWB is supplied via the URL (?awb=).
+  // Wrapped in an async runner so no setState happens synchronously in the body.
+  useEffect(() => {
+    if (!awbInput) return;
+    const run = async () => {
+      await trackLive(awbInput);
+    };
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get('orderId');
@@ -105,6 +161,72 @@ export default function TrackPage() {
             {!activeOrder && (
               <div className="mt-6 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-700">
                 Tip: You can also open tracking from My Orders for a pre-filled order ID.
+              </div>
+            )}
+          </div>
+
+          {/* Live courier tracking by AWB (Shiprocket) */}
+          <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+            <h3 className="text-lg font-bold text-emerald-700">Live Courier Tracking</h3>
+            <p className="text-sm text-slate-600 mt-1">
+              Have a tracking (AWB) number? Track your shipment live with the courier.
+            </p>
+            <div className="mt-3 flex flex-col sm:flex-row gap-3">
+              <input
+                value={awbInput}
+                onChange={(e) => setAwbInput(e.target.value)}
+                placeholder="Enter AWB / Tracking Number"
+                className="flex-1 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              <button
+                onClick={() => trackLive(awbInput)}
+                disabled={liveLoading}
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold px-5 py-3 transition"
+              >
+                {liveLoading ? 'Tracking…' : 'Track Live'}
+              </button>
+            </div>
+
+            {liveError && <p className="mt-3 text-sm text-orange-500 font-medium">{liveError}</p>}
+
+            {liveTracking && (
+              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div>
+                    <p className="text-xs text-slate-500">Courier</p>
+                    <p className="font-semibold text-slate-900">{liveTracking.courierName || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">AWB</p>
+                    <p className="font-semibold text-slate-900">{liveTracking.awb || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Status</p>
+                    <p className="font-semibold text-emerald-700">{liveTracking.currentStatus}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500">Est. Delivery</p>
+                    <p className="font-semibold text-slate-900">{liveTracking.estimatedDelivery || '—'}</p>
+                  </div>
+                </div>
+
+                <ol className="relative border-l border-emerald-200 pl-4 mt-5 space-y-4">
+                  {liveTracking.activities.length === 0 ? (
+                    <li className="text-sm text-slate-500">No tracking activity yet.</li>
+                  ) : (
+                    liveTracking.activities.map((activity, idx) => (
+                      <li key={idx} className="ml-2">
+                        <div className="absolute -left-1.5 mt-1 h-3 w-3 rounded-full bg-emerald-500" />
+                        <p className="text-sm font-medium text-slate-900">
+                          {activity.activity || activity.status}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {activity.location} {activity.date ? `• ${activity.date}` : ''}
+                        </p>
+                      </li>
+                    ))
+                  )}
+                </ol>
               </div>
             )}
           </div>

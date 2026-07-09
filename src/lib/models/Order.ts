@@ -48,6 +48,27 @@ const orderSchema = new mongoose.Schema(
     shiprocketOrderId: String,
     shiprocketShipmentId: String,
     awbNumber: String,
+    // ---------------------------------------------------------------------
+    // Shiprocket shipping fields (additive – existing docs default to null).
+    // Kept flat to remain backward compatible with the existing order flow.
+    // ---------------------------------------------------------------------
+    courierName: String,
+    estimatedDelivery: String,
+    trackingUrl: String,
+    // Canonical shipment status from lib/shiprocket (PENDING, IN_TRANSIT, ...)
+    shipmentStatus: String,
+    pickupStatus: String,
+    pickupTokenNumber: String,
+    labelUrl: String,
+    invoiceUrl: String,
+    manifestUrl: String,
+    // ---------------------------------------------------------------------
+    // Shiprocket Checkout (SRC) fields (additive). Populated when an order is
+    // placed via the hosted Shiprocket Checkout widget instead of native pay.
+    // ---------------------------------------------------------------------
+    checkoutOrderId: String,
+    checkoutSource: String,
+    paymentMethod: String,
     prescriptions: [
       {
         productId: String,

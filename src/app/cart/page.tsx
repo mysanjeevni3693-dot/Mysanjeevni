@@ -39,7 +39,51 @@ declare global {
         render: (container: string) => Promise<void>;
       };
     };
+    HeadlessCheckout?: {
+      addToCart: (
+        event: unknown,
+        token: string,
+        options: { fallbackUrl: string; isInitiatedFromApp?: boolean }
+      ) => void;
+    };
   }
+}
+
+// Shiprocket Checkout (SRC) hosted widget assets. Override the base with
+// NEXT_PUBLIC_SHIPROCKET_CHECKOUT_UI (e.g. the staging URL) when needed.
+const SRC_UI_BASE =
+  process.env.NEXT_PUBLIC_SHIPROCKET_CHECKOUT_UI || 'https://checkout-ui.shiprocket.com';
+const SRC_JS_URL = `${SRC_UI_BASE}/assets/js/channels/shopify.js`;
+const SRC_CSS_URL = `${SRC_UI_BASE}/assets/styles/shopify.css`;
+// Feature flag – Shiprocket Checkout button is only shown when explicitly enabled.
+const SRC_ENABLED = process.env.NEXT_PUBLIC_SHIPROCKET_CHECKOUT_ENABLED === 'true';
+
+/** Loads the Shiprocket Checkout JS + CSS once. */
+async function loadShiprocketCheckoutScript(): Promise<boolean> {
+  if (typeof window !== 'undefined' && window.HeadlessCheckout) return true;
+
+  if (!document.querySelector(`link[href="${SRC_CSS_URL}"]`)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = SRC_CSS_URL;
+    document.head.appendChild(link);
+  }
+
+  return new Promise<boolean>((resolve) => {
+    const existing = document.querySelector(`script[src="${SRC_JS_URL}"]`) as HTMLScriptElement | null;
+    if (existing) {
+      if (window.HeadlessCheckout) return resolve(true);
+      existing.addEventListener('load', () => resolve(Boolean(window.HeadlessCheckout)));
+      existing.addEventListener('error', () => resolve(false));
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = SRC_JS_URL;
+    script.async = true;
+    script.onload = () => resolve(Boolean(window.HeadlessCheckout));
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
 }
 
 function isImageUrl(value?: string) {
@@ -77,6 +121,7 @@ async function loadPayPalScript(clientId: string, currency: string) {
 
 export default function CartPage() {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [srcBusy, setSrcBusy] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>('IN');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -100,6 +145,27 @@ export default function CartPage() {
     postalCode: '',
     country: 'India',
   });
+  // Live Shiprocket serviceability result for the entered delivery pincode.
+  // Kept additive: when unavailable we fall back to the existing flat charge.
+  const [shippingInfo, setShippingInfo] = useState<{
+    checking: boolean;
+    checkedPincode: string;
+    serviceable: boolean;
+    rate: number;
+    courier: string;
+    etd: string;
+    codAvailable: boolean;
+    error: string;
+  }>({
+    checking: false,
+    checkedPincode: '',
+    serviceable: false,
+    rate: 0,
+    courier: '',
+    etd: '',
+    codAvailable: false,
+    error: '',
+  });
   const router = useRouter();
   const { isIndia: isIndiaPreference } = usePreferredCountry();
 
@@ -109,7 +175,12 @@ export default function CartPage() {
   const totalPrice = cartItems.reduce((sum, item) => sum + effectivePrice(item) * (item?.quantity || 0), 0);
   const discount = Math.floor(totalPrice * 0.10); // 10% discount
   const finalPrice = totalPrice - discount;
-  const deliveryCharge = isIndia ? 50 : 0;
+  // Delivery charge for India uses the live Shiprocket serviceability rate when
+  // available, otherwise falls back to the existing flat ₹50 (non-breaking).
+  const FLAT_DELIVERY_CHARGE = 50;
+  const serviceableRate =
+    shippingInfo.serviceable && shippingInfo.rate > 0 ? Math.round(shippingInfo.rate) : 0;
+  const deliveryCharge = isIndia ? serviceableRate || FLAT_DELIVERY_CHARGE : 0;
   const totalAmount = finalPrice + deliveryCharge;
 
   const getStoredCountry = () => {
@@ -330,8 +401,16 @@ export default function CartPage() {
 
               const prescriptions = getAllPrescriptions();
 
+              // Persist to DB (dual-write). International (PayPal) orders skip the
+              // India-only Shiprocket pipeline server-side but are still stored.
+              const dbResult = await persistOrderToDatabase({
+                paymentMethod: 'paypal',
+                paymentStatus: 'completed',
+              });
+
               const order = {
-                _id: Math.random().toString(36).substr(2, 9),
+                _id: dbResult?.orderId || Math.random().toString(36).substr(2, 9),
+                dbOrderId: dbResult?.orderId,
                 userId: user?.id || 'guest',
                 customerName: address.fullName,
                 customerEmail: user?.email || 'not-provided',
@@ -352,6 +431,9 @@ export default function CartPage() {
                 deliveryAddress: address,
                 status: 'confirmed',
                 paymentStatus: 'completed',
+                awbNumber: dbResult?.awbNumber || '',
+                courierName: dbResult?.courierName || '',
+                shipmentStatus: dbResult?.shipmentStatus || '',
                 createdAt: new Date().toISOString(),
               };
 
@@ -481,9 +563,13 @@ export default function CartPage() {
     // COD should not go through online payment gateway.
     if (selectedPaymentMethod === 'cod') {
       const prescriptions = getAllPrescriptions();
-      
+
+      // Persist to DB + auto-run Shiprocket pipeline (dual-write; best-effort).
+      const dbResult = await persistOrderToDatabase({ paymentMethod: 'cod', paymentStatus: 'pending' });
+
       const order = {
-        _id: Math.random().toString(36).substr(2, 9),
+        _id: dbResult?.orderId || Math.random().toString(36).substr(2, 9),
+        dbOrderId: dbResult?.orderId,
         userId: user?.id || 'guest',
         customerName: address.fullName,
         customerEmail: user?.email || 'not-provided',
@@ -502,6 +588,9 @@ export default function CartPage() {
         deliveryAddress: address,
         status: 'pending',
         paymentStatus: 'pending',
+        awbNumber: dbResult?.awbNumber || '',
+        courierName: dbResult?.courierName || '',
+        shipmentStatus: dbResult?.shipmentStatus || '',
         createdAt: new Date().toISOString(),
       };
 
@@ -616,8 +705,17 @@ export default function CartPage() {
 
             const prescriptions = getAllPrescriptions();
 
+            // Persist to DB + auto-run Shiprocket pipeline (dual-write; best-effort).
+            const dbResult = await persistOrderToDatabase({
+              paymentMethod: `razorpay-${selectedPaymentMethod}`,
+              paymentStatus: 'completed',
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+            });
+
             const order = {
-              _id: Math.random().toString(36).substr(2, 9),
+              _id: dbResult?.orderId || Math.random().toString(36).substr(2, 9),
+              dbOrderId: dbResult?.orderId,
               userId: user?.id || 'guest',
               customerName: address.fullName,
               customerEmail: user?.email || 'not-provided',
@@ -638,6 +736,9 @@ export default function CartPage() {
               deliveryAddress: address,
               status: 'confirmed',
               paymentStatus: 'completed',
+              awbNumber: dbResult?.awbNumber || '',
+              courierName: dbResult?.courierName || '',
+              shipmentStatus: dbResult?.shipmentStatus || '',
               createdAt: new Date().toISOString(),
             };
 
@@ -685,6 +786,194 @@ export default function CartPage() {
       ...prev,
       [name]: value,
     }));
+
+    // When a valid 6-digit Indian pincode is entered, fetch live serviceability
+    // (courier, charge, ETA, COD availability) and reflect it in the summary.
+    if (name === 'postalCode') {
+      const pincode = value.trim();
+      if (isIndia && /^\d{6}$/.test(pincode)) {
+        checkPincodeServiceability(pincode);
+      } else {
+        setShippingInfo((prev) => ({ ...prev, serviceable: false, checkedPincode: '', error: '' }));
+      }
+    }
+  };
+
+  /**
+   * Calls the server-side Shiprocket serviceability route for the given pincode.
+   * All Shiprocket credentials stay on the server; this only receives normalized
+   * courier/rate/ETA data. Failures degrade gracefully to the flat rate.
+   */
+  const checkPincodeServiceability = async (pincode: string) => {
+    setShippingInfo((prev) => ({ ...prev, checking: true, error: '' }));
+    try {
+      const totalUnits = cartItems.reduce((sum, item) => sum + (item?.quantity || 0), 0);
+      const weight = Math.max(0.5, totalUnits * 0.5);
+
+      const res = await fetch('/api/shiprocket/serviceability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deliveryPincode: pincode, weight, cod: selectedPaymentMethod === 'cod' }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.data?.serviceable) {
+        setShippingInfo({
+          checking: false,
+          checkedPincode: pincode,
+          serviceable: false,
+          rate: 0,
+          courier: '',
+          etd: '',
+          codAvailable: false,
+          error: 'Delivery is not available for this pincode.',
+        });
+        return;
+      }
+
+      const recommended = data.data.recommended;
+      setShippingInfo({
+        checking: false,
+        checkedPincode: pincode,
+        serviceable: true,
+        rate: Number(recommended?.rate || 0),
+        courier: String(recommended?.courierName || ''),
+        etd: String(recommended?.estimatedDeliveryDate || ''),
+        codAvailable: Boolean(data.data.codAvailable),
+        error: '',
+      });
+    } catch {
+      setShippingInfo((prev) => ({
+        ...prev,
+        checking: false,
+        serviceable: false,
+        error: 'Could not check delivery availability right now.',
+      }));
+    }
+  };
+
+  /**
+   * Persists the order to the database and triggers the automatic Shiprocket
+   * fulfilment pipeline (create order -> AWB -> pickup) on the server. This runs
+   * alongside the existing localStorage write (dual-write) so all current order
+   * screens keep working while the DB becomes the source of truth for shipping.
+   *
+   * Returns the DB/shipment identifiers on success, or null if persistence was
+   * skipped/failed (in which case the purchase still completes via localStorage).
+   */
+  const persistOrderToDatabase = async (payment: {
+    paymentMethod: string;
+    paymentStatus: 'pending' | 'completed';
+    razorpayOrderId?: string;
+    razorpayPaymentId?: string;
+  }): Promise<{
+    orderId: string;
+    shiprocketOrderId: string;
+    awbNumber: string;
+    courierName: string;
+    shipmentStatus: string;
+    pickupStatus: string;
+  } | null> => {
+    try {
+      if (!user?.id) return null;
+
+      const prescriptions = getAllPrescriptions();
+      const payload = {
+        userId: user.id,
+        items: cartItems
+          .filter((item) => item)
+          .map((item) => ({
+            productId: String(item.productId || item.id),
+            productName: item.productName || item.name || 'Product',
+            quantity: item.quantity || 1,
+            price: effectivePrice(item),
+            requiresPrescription: item.requiresPrescription || false,
+            prescriptionUrl: item.requiresPrescription
+              ? prescriptions[String(item.productId || item.id)]
+              : undefined,
+          })),
+        deliveryAddress: {
+          fullName: address.fullName,
+          phone: address.phoneNumber,
+          addressLine1: [address.houseNo, address.streetAddress].filter(Boolean).join(', '),
+          addressLine2: '',
+          city: address.city,
+          state: address.state,
+          pincode: address.postalCode,
+          country: address.country,
+        },
+        subtotal: finalPrice,
+        discount,
+        deliveryCharge,
+        totalAmount,
+        ...payment,
+      };
+
+      const res = await fetch('/api/orders/place', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) return null;
+      return data.data;
+    } catch {
+      // Never block the purchase on DB/shipping persistence.
+      return null;
+    }
+  };
+
+  /**
+   * Opens the Shiprocket Checkout (SRC) hosted widget. We request a signed
+   * access token from our backend (which never exposes the API secret), load the
+   * SRC snippet, then hand the token to `HeadlessCheckout.addToCart`. Shiprocket
+   * handles address + payment and redirects to /checkout/success on completion.
+   */
+  const handleShiprocketCheckout = async (event: React.MouseEvent) => {
+    if (cartItems.length === 0) {
+      alert('Your cart is empty');
+      return;
+    }
+
+    setSrcBusy(true);
+    try {
+      const items = cartItems
+        .filter((item) => item)
+        .map((item) => ({
+          variantId: String(item.productId || item.id),
+          quantity: item.quantity || 1,
+          price: effectivePrice(item),
+          name: item.productName || item.name || 'Product',
+          imageUrl: isImageUrl(item.image) ? (item.image as string) : '',
+        }));
+
+      const res = await fetch('/api/shiprocket/checkout/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success || !data?.data?.token) {
+        alert(data?.error?.message || 'Unable to start Shiprocket Checkout. Please try again.');
+        return;
+      }
+
+      const loaded = await loadShiprocketCheckoutScript();
+      if (!loaded || !window.HeadlessCheckout) {
+        alert('Checkout is temporarily unavailable. Please try another payment option.');
+        return;
+      }
+
+      const fallbackUrl = `${window.location.origin}/cart`;
+      window.HeadlessCheckout.addToCart(event.nativeEvent, data.data.token, {
+        fallbackUrl,
+        isInitiatedFromApp: false,
+      });
+    } catch {
+      alert('Something went wrong starting checkout. Please try again.');
+    } finally {
+      setSrcBusy(false);
+    }
   };
 
   const submitAddress = () => {
@@ -898,6 +1187,33 @@ export default function CartPage() {
                     {isOTPVerified ? '💳 Buy Now' : '🔐 Verify OTP & Buy'}
                   </button>
 
+                  {SRC_ENABLED && isIndia && (
+                    <>
+                      <div className="flex items-center gap-3 my-4">
+                        <span className="h-px flex-1 bg-gray-200" />
+                        <span className="text-xs text-gray-400 font-medium">OR</span>
+                        <span className="h-px flex-1 bg-gray-200" />
+                      </div>
+                      <button
+                        onClick={handleShiprocketCheckout}
+                        disabled={srcBusy}
+                        className="w-full bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2"
+                      >
+                        {srcBusy ? (
+                          <>
+                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            Starting…
+                          </>
+                        ) : (
+                          '⚡ Fast Checkout (Shiprocket)'
+                        )}
+                      </button>
+                      <p className="mt-2 text-[11px] text-gray-400 text-center">
+                        Address & payment handled securely by Shiprocket Checkout
+                      </p>
+                    </>
+                  )}
+
                   <div className="mt-4 text-xs text-gray-600 text-center space-y-1">
                     <p>✓ Secure Checkout</p>
                     <p>✓ Multiple Payment Options</p>
@@ -1109,6 +1425,24 @@ export default function CartPage() {
                   maxLength={6}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900 placeholder-gray-500"
                 />
+
+                {/* Live delivery serviceability (Shiprocket) */}
+                {address.country === 'India' && /^\d{6}$/.test(address.postalCode) && (
+                  <div className="mt-2 text-xs">
+                    {shippingInfo.checking ? (
+                      <p className="text-gray-500">Checking delivery availability…</p>
+                    ) : shippingInfo.serviceable && shippingInfo.checkedPincode === address.postalCode ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-emerald-800 space-y-0.5">
+                        <p>✓ Deliverable via <span className="font-semibold">{shippingInfo.courier || 'courier partner'}</span></p>
+                        <p>Shipping charge: <span className="font-semibold">₹{Math.round(shippingInfo.rate)}</span></p>
+                        {shippingInfo.etd && <p>Estimated delivery: <span className="font-semibold">{shippingInfo.etd}</span></p>}
+                        <p>COD: <span className="font-semibold">{shippingInfo.codAvailable ? 'Available' : 'Not available'}</span></p>
+                      </div>
+                    ) : shippingInfo.error && shippingInfo.checkedPincode === address.postalCode ? (
+                      <p className="text-red-600">{shippingInfo.error}</p>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               {/* Country */}

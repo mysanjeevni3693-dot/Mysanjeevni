@@ -10,6 +10,7 @@ interface Order {
   _id?: string;
   id?: string;
   orderId?: string;
+  dbOrderId?: string;
   userId: string;
   items?: any[];
   totalAmount?: number;
@@ -18,6 +19,10 @@ interface Order {
   razorpayPaymentId?: string;
   status?: string;
   createdAt?: string;
+  // Shipping details populated at checkout from the Shiprocket pipeline.
+  awbNumber?: string;
+  courierName?: string;
+  shipmentStatus?: string;
 }
 
 export default function OrdersPage() {
@@ -294,9 +299,42 @@ export default function OrdersPage() {
                         </div>
                       </div>
 
+                      {/* Shipping details (from the Shiprocket pipeline) */}
+                      {(order.courierName || order.awbNumber || order.shipmentStatus) && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <h4 className="font-semibold text-gray-900 mb-2">Shipping</h4>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+                            {order.courierName && (
+                              <div>
+                                <span className="text-gray-600">Courier: </span>
+                                <span className="font-medium text-gray-900">{order.courierName}</span>
+                              </div>
+                            )}
+                            {order.awbNumber && (
+                              <div>
+                                <span className="text-gray-600">Tracking No: </span>
+                                <span className="font-medium text-gray-900">{order.awbNumber}</span>
+                              </div>
+                            )}
+                            {order.shipmentStatus && (
+                              <div>
+                                <span className="text-gray-600">Status: </span>
+                                <span className="font-medium text-emerald-700">{order.shipmentStatus}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mt-6 flex gap-3">
                         <button
-                          onClick={() => router.push(`/track?orderId=${encodeURIComponent(safeOrderId)}`)}
+                          onClick={() =>
+                            router.push(
+                              order.awbNumber
+                                ? `/track?awb=${encodeURIComponent(order.awbNumber)}`
+                                : `/track?orderId=${encodeURIComponent(safeOrderId)}`
+                            )
+                          }
                           className="flex-1 px-4 py-2 border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 font-medium transition"
                         >
                           📞 Track Order
