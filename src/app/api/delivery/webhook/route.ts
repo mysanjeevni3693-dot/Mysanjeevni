@@ -1,9 +1,14 @@
 /**
- * POST /api/shiprocket/webhook
+ * POST /api/delivery/webhook
  *
  * Receives shipment status updates pushed by Shiprocket and syncs them to the
  * DB. Authenticated via the `x-api-key` header (configure the same value in the
  * Shiprocket panel and in `SHIPROCKET_WEBHOOK_SECRET`).
+ *
+ * NOTE: This route intentionally avoids the words "shiprocket"/"sr"/"kr" in its
+ * URL because Shiprocket rejects webhook URLs that contain those keywords
+ * ("Address is not allowed"). The internal helper library still lives under
+ * `src/lib/shiprocket/` since that path is never exposed publicly.
  *
  * Handled events (mapped to canonical statuses): Shipment Created, Pickup
  * Scheduled, In Transit, Out For Delivery, Delivered, RTO, Cancelled.
