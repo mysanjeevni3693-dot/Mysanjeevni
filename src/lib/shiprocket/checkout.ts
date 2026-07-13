@@ -114,7 +114,8 @@ export async function createCheckoutToken(
         catalog_data: {
           price: item.price,
           name: item.name,
-          image_url: item.imageUrl || '',
+          // Shiprocket rejects a blank image_url, so fall back to a placeholder.
+          image_url: item.imageUrl || shiprocketCheckoutConfig.placeholderImage,
         },
       })),
       ...(input.coupon

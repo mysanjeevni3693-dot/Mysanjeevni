@@ -66,6 +66,15 @@ export const shiprocketCheckoutConfig = {
   redirectUrl: process.env.SHIPROCKET_CHECKOUT_REDIRECT_URL || '',
   /** Optional shared secret to verify inbound SRC order webhooks. */
   webhookSecret: process.env.SHIPROCKET_CHECKOUT_WEBHOOK_SECRET || '',
+  /**
+   * Fallback product image used when a cart item has no image. Shiprocket
+   * Checkout rejects blank `image_url` values (422: "imageUrl must not be
+   * blank"), so we always send a non-empty URL. Override with a self-hosted
+   * asset via SHIPROCKET_CHECKOUT_PLACEHOLDER_IMAGE.
+   */
+  placeholderImage:
+    process.env.SHIPROCKET_CHECKOUT_PLACEHOLDER_IMAGE ||
+    'https://placehold.co/300x300/png?text=Product',
 } as const;
 
 /**

@@ -38,8 +38,22 @@ const cache: TokenCache = {
  */
 const TOKEN_TTL_MS = 23 * 60 * 60 * 1000;
 
+/**
+ * After a login is rejected by Shiprocket (bad credentials / blocked account),
+ * we stop attempting to log in again for this cooldown window. Repeated failed
+ * logins are exactly what causes Shiprocket to temporarily block the account
+ * ("too many failed login attempts"), so backing off protects the account and
+ * lets callers degrade gracefully (e.g. checkout falls back to the flat rate).
+ */
+const AUTH_FAILURE_COOLDOWN_MS = 60 * 1000;
+
 /** In-flight login promise used to de-duplicate concurrent token requests. */
 let pendingLogin: Promise<string> | null = null;
+
+/** Epoch ms until which we should not retry login after an auth failure. */
+let failureCooldownUntil = 0;
+/** The auth error that triggered the current cooldown (re-thrown while active). */
+let lastAuthError: ShiprocketError | null = null;
 
 /**
  * Returns a valid Shiprocket JWT, logging in if necessary. Concurrent callers
@@ -59,11 +73,36 @@ export async function getShiprocketToken(forceRefresh = false): Promise<string> 
     return pendingLogin;
   }
 
+  // Negative cache: while a recent login failure is still "cooling down", fail
+  // fast with the same error instead of hammering Shiprocket's auth endpoint
+  // (which is what gets the account temporarily blocked).
+  if (lastAuthError && now < failureCooldownUntil) {
+    throw lastAuthError;
+  }
+
   pendingLogin = login()
     .then((token) => {
       cache.token = token;
       cache.expiresAt = Date.now() + TOKEN_TTL_MS;
+      failureCooldownUntil = 0;
+      lastAuthError = null;
       return token;
+    })
+    .catch((error) => {
+      // Only back off on genuine auth rejections (bad creds / blocked / rate
+      // limited) — not on transient network errors, which shouldn't disable
+      // logins for a full minute.
+      if (
+        error instanceof ShiprocketError &&
+        (error.code === 'AUTH_FAILED' || error.status === 401 || error.status === 403 || error.status === 429)
+      ) {
+        failureCooldownUntil = Date.now() + AUTH_FAILURE_COOLDOWN_MS;
+        lastAuthError = error;
+        shiprocketLogger.warn('auth', 'Login failed – backing off before next attempt', {
+          cooldownMs: AUTH_FAILURE_COOLDOWN_MS,
+        });
+      }
+      throw error;
     })
     .finally(() => {
       pendingLogin = null;
