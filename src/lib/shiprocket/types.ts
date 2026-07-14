@@ -344,10 +344,15 @@ export interface CheckoutOrder {
   items: Array<{ variantId: string; quantity: number }>;
   shippingAddress: CheckoutAddress | null;
   billingAddress: CheckoutAddress | null;
+  /** Our signed-in user id, stamped via custom_attributes at token creation. */
+  customUserId: string;
 }
 
 export const checkoutOrderDetailsSchema = z.object({
   orderId: z.string().trim().min(1),
+  // Optional signed-in user id so the success page can attribute (and persist)
+  // the order to the correct customer even if the webhook was missed.
+  userId: z.string().trim().optional(),
 });
 
 export type CheckoutOrderDetailsInput = z.infer<typeof checkoutOrderDetailsSchema>;

@@ -947,10 +947,15 @@ export default function CartPage() {
           imageUrl: isImageUrl(item.image) ? (item.image as string) : '',
         }));
 
+      // Stamp the signed-in user id onto the order so the webhook can attribute
+      // it to the right account even if the customer enters a different phone or
+      // email inside the hosted checkout.
+      const customAttributes = user?.id ? { user_id: String(user.id) } : undefined;
+
       const res = await fetch('/api/shiprocket/checkout/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, ...(customAttributes ? { customAttributes } : {}) }),
       });
       const data = await res.json();
       if (!res.ok || !data?.success || !data?.data?.token) {

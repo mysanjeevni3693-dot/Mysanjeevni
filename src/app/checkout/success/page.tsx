@@ -57,11 +57,21 @@ export default function CheckoutSuccessPage() {
         return;
       }
 
+      // Pass the signed-in user id so the server can attribute (and persist)
+      // this order to the correct customer even if the webhook was missed.
+      let userId = '';
+      try {
+        const stored = JSON.parse(localStorage.getItem('user') || '{}');
+        userId = String(stored?.id || '');
+      } catch {
+        /* ignore */
+      }
+
       try {
         const res = await fetch('/api/shiprocket/checkout/order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId: oid }),
+          body: JSON.stringify({ orderId: oid, userId }),
         });
         const data = await res.json();
         if (res.ok && data?.success) {

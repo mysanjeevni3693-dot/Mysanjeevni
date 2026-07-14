@@ -229,6 +229,20 @@ export function parseCheckoutOrder(raw: Record<string, unknown>): CheckoutOrder 
   const payments = Array.isArray(raw.payments) ? (raw.payments as Array<Record<string, unknown>>) : [];
   const firstPayment = payments[0] ?? {};
 
+  // custom_attributes we set at token creation may come back top-level or nested
+  // under cart_data depending on the SRC payload (webhook vs order-details).
+  const cartData = (raw.cart_data && typeof raw.cart_data === 'object' ? raw.cart_data : {}) as Record<
+    string,
+    unknown
+  >;
+  const customAttributes = ((raw.custom_attributes ?? cartData.custom_attributes) || {}) as Record<
+    string,
+    unknown
+  >;
+  const customUserId = String(
+    customAttributes.user_id ?? customAttributes.userId ?? ''
+  );
+
   return {
     orderId: String(raw.order_id ?? raw.platform_order_id ?? ''),
     platformOrderId: String(raw.platform_order_id ?? ''),
@@ -251,6 +265,7 @@ export function parseCheckoutOrder(raw: Record<string, unknown>): CheckoutOrder 
     items,
     shippingAddress: parseAddress(raw.shipping_address),
     billingAddress: parseAddress(raw.billing_address),
+    customUserId,
   };
 }
 
