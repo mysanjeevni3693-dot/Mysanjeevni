@@ -35,6 +35,11 @@ function mapPaymentStatus(status: string): 'pending' | 'completed' | 'failed' {
   return 'pending';
 }
 
+/** Escapes a string for safe use inside a RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function POST(request: NextRequest) {
   try {
     const rawBody = await request.text();
@@ -69,17 +74,30 @@ export async function POST(request: NextRequest) {
       return ok({ received: true, persisted: true, updated: true });
     }
 
-    // Resolve the customer by email or phone.
-    const user = await User.findOne({
-      $or: [
-        ...(order.email ? [{ email: order.email }] : []),
-        ...(order.phone ? [{ phone: order.phone }] : []),
-      ],
-    });
+    // Resolve the customer by email or phone, tolerant of formatting differences:
+    //  - email is matched case-insensitively (Shiprocket may send a different case)
+    //  - phone is matched on its last 10 digits, so +91 / 0 prefixes and spaces
+    //    still match a stored number (a very common cause of missed matches).
+    const emailNorm = (order.email || '').trim().toLowerCase();
+    const phoneLast10 = (order.phone || '').replace(/\D/g, '').slice(-10);
+
+    const matchers: Record<string, unknown>[] = [];
+    if (emailNorm) {
+      matchers.push({ email: new RegExp(`^${escapeRegExp(emailNorm)}$`, 'i') });
+    }
+    if (phoneLast10.length === 10) {
+      matchers.push({ phone: new RegExp(`${phoneLast10}$`) });
+    }
+
+    const user = matchers.length ? await User.findOne({ $or: matchers }) : null;
 
     if (!user) {
-      shiprocketLogger.warn('webhook', 'No matching user for SRC order – acknowledged without DB order', {
+      // Surface at error level: the order succeeded in Shiprocket but cannot be
+      // attributed to a customer, so it will not appear in their My Orders view.
+      shiprocketLogger.error('webhook', 'No matching user for SRC order – acknowledged without DB order', {
         orderId: order.orderId,
+        email: order.email || '',
+        phone: order.phone || '',
       });
       return ok({ received: true, persisted: false, reason: 'user_not_found' });
     }

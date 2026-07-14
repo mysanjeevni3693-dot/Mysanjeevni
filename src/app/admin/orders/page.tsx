@@ -2,6 +2,39 @@
 
 import { useState, useEffect } from 'react';
 
+/**
+ * Normalizes a database order (from GET /api/orders?admin=true) into the shape
+ * this admin panel renders. The DB uses `totalPrice` / `productName` and stores
+ * the customer as a populated `userId` ref.
+ */
+function normalizeAdminOrder(o: any): any {
+  const shipping = Number(o?.shippingCharge || 0);
+  const total = Number(o?.totalPrice ?? o?.totalAmount ?? 0);
+  const customer = o?.userId && typeof o.userId === 'object' ? o.userId : null;
+  return {
+    _id: String(o?._id || ''),
+    customerName: customer?.fullName || o?.deliveryAddress?.fullName || 'N/A',
+    customerEmail: customer?.email || 'N/A',
+    customerPhone: customer?.phone || o?.deliveryAddress?.phone || 'N/A',
+    items: Array.isArray(o?.items)
+      ? o.items.map((i: any) => ({
+          name: i?.productName || i?.name || 'Item',
+          price: Number(i?.price || 0),
+          quantity: Number(i?.quantity || 0),
+        }))
+      : [],
+    totalAmount: total,
+    subtotal: Math.max(total - shipping, 0),
+    discount: 0,
+    deliveryCharge: shipping,
+    deliveryAddress: o?.deliveryAddress || null,
+    paymentMethod: o?.paymentMethod || (o?.razorpayPaymentId ? 'razorpay' : 'cod'),
+    paymentStatus: o?.paymentStatus,
+    status: o?.status || 'pending',
+    createdAt: o?.createdAt,
+  };
+}
+
 export default function AdminOrders() {
   const [orders, setOrders] = useState<any[]>([]);
   const [filteredOrders, setFilteredOrders] = useState<any[]>([]);
@@ -46,11 +79,25 @@ export default function AdminOrders() {
 
   const fetchOrders = async () => {
     try {
-      const ordersStr = localStorage.getItem('orders') || '[]';
-      const ordersList = JSON.parse(ordersStr);
-      setOrders(ordersList);
+      // The database is the source of truth for ALL customer orders. localStorage
+      // is per-browser, so it only ever held orders placed on this device.
+      const res = await fetch('/api/orders?admin=true', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const list = Array.isArray(data?.orders) ? data.orders.map(normalizeAdminOrder) : [];
+        setOrders(list);
+      } else {
+        const ordersStr = localStorage.getItem('orders') || '[]';
+        setOrders(JSON.parse(ordersStr));
+      }
     } catch (error) {
       console.error('Error fetching orders:', error);
+      try {
+        const ordersStr = localStorage.getItem('orders') || '[]';
+        setOrders(JSON.parse(ordersStr));
+      } catch {
+        // ignore
+      }
     } finally {
       setLoading(false);
     }
@@ -76,24 +123,49 @@ export default function AdminOrders() {
   };
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    if (!orderId) return;
     try {
       setUpdatingStatus(orderId);
-      
-      // Update localStorage
-      const ordersStr = localStorage.getItem('orders') || '[]';
-      const ordersList = JSON.parse(ordersStr);
-      const updatedOrders = ordersList.map((order: any) => 
-        (order._id === orderId || order.id === orderId) ? { ...order, status: newStatus } : order
+
+      // Persist to the database (source of truth) for real DB orders.
+      const isDbOrder = /^[0-9a-fA-F]{24}$/.test(orderId);
+      if (isDbOrder) {
+        const res = await fetch('/api/orders', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId, status: newStatus }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error || 'Failed to update order');
+        }
+      }
+
+      // Keep any localStorage copy in sync too.
+      try {
+        const ordersStr = localStorage.getItem('orders') || '[]';
+        const ordersList = JSON.parse(ordersStr);
+        const updatedLocal = ordersList.map((order: any) =>
+          order._id === orderId || order.id === orderId || order.dbOrderId === orderId
+            ? { ...order, status: newStatus }
+            : order
+        );
+        localStorage.setItem('orders', JSON.stringify(updatedLocal));
+      } catch {
+        // ignore local sync errors
+      }
+
+      // Update on-screen state.
+      setOrders((prev) =>
+        prev.map((order: any) =>
+          order._id === orderId || order.id === orderId ? { ...order, status: newStatus } : order
+        )
       );
-      localStorage.setItem('orders', JSON.stringify(updatedOrders));
-      
-      // Update local state
-      setOrders(updatedOrders);
-      
+
       alert('Order status updated successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating order status:', error);
-      alert('Failed to update order status');
+      alert(error?.message || 'Failed to update order status');
     } finally {
       setUpdatingStatus(null);
     }
