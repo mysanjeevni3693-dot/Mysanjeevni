@@ -25,6 +25,35 @@ interface Order {
   shipmentStatus?: string;
 }
 
+/**
+ * Normalizes a database order (from GET /api/orders) into the shape this page
+ * renders. The DB uses `totalPrice` / `productName`; the UI expects
+ * `totalAmount` / item `name`.
+ */
+function normalizeDbOrder(o: any): Order {
+  return {
+    _id: String(o?._id || ''),
+    userId: String(o?.userId?._id || o?.userId || ''),
+    items: Array.isArray(o?.items)
+      ? o.items.map((i: any) => ({
+          name: i?.productName || i?.name || 'Item',
+          brand: i?.brand || '',
+          quantity: Number(i?.quantity || 0),
+          price: Number(i?.price || 0),
+        }))
+      : [],
+    totalAmount: Number(o?.totalPrice ?? o?.totalAmount ?? 0),
+    paymentMethod: o?.paymentMethod || (o?.razorpayPaymentId ? 'razorpay' : 'cod'),
+    paymentStatus: o?.paymentStatus,
+    razorpayPaymentId: o?.razorpayPaymentId,
+    status: o?.status,
+    createdAt: o?.createdAt,
+    awbNumber: o?.awbNumber,
+    courierName: o?.courierName,
+    shipmentStatus: o?.shipmentStatus,
+  };
+}
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<any>(null);
@@ -42,12 +71,44 @@ export default function OrdersPage() {
 
     const parsedUser = JSON.parse(userStr);
     setUser(parsedUser);
-
-    // Get user's orders from localStorage
-    const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-    const userOrders = allOrders.filter((order: Order) => order.userId === parsedUser.id);
-    setOrders(userOrders.reverse()); // Show latest first
+    loadOrders(parsedUser);
   }, [router]);
+
+  /**
+   * Loads orders from the database (source of truth) and merges any local-only
+   * orders (e.g. guest/offline records not yet in the DB). This ensures orders
+   * placed via the Shiprocket hosted checkout or on another device still show.
+   */
+  const loadOrders = async (parsedUser: any) => {
+    // Local orders kept for backward compatibility / offline records.
+    const localAll: Order[] = JSON.parse(localStorage.getItem('orders') || '[]');
+    const localUserOrders = localAll.filter((o) => o.userId === parsedUser?.id);
+
+    let dbOrders: Order[] = [];
+    try {
+      const res = await fetch(`/api/orders?userId=${encodeURIComponent(parsedUser?.id || '')}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        dbOrders = Array.isArray(data?.orders) ? data.orders.map(normalizeDbOrder) : [];
+      }
+    } catch {
+      // Network error – fall back to localStorage-only view below.
+    }
+
+    // Merge: DB is authoritative; add local orders not already present in the DB.
+    const dbIds = new Set(dbOrders.map((o) => String(o._id)));
+    const localOnly = localUserOrders.filter((o) => {
+      const id = String(o.dbOrderId || o._id || o.id || o.orderId || '');
+      return id && !dbIds.has(id);
+    });
+
+    const merged = [...dbOrders, ...localOnly].sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+    setOrders(merged);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -136,9 +197,25 @@ export default function OrdersPage() {
         refundId = String(refundData?.refund?.id || '');
       }
 
+      // Persist the cancellation to the database (source of truth) so it sticks
+      // across reloads/devices. Best-effort: a non-DB (local-only) id just 404s.
+      const isDbOrder = /^[0-9a-fA-F]{24}$/.test(resolvedOrderId);
+      if (isDbOrder) {
+        try {
+          await fetch('/api/orders', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId: resolvedOrderId, status: 'cancelled' }),
+          });
+        } catch {
+          // Ignore – local state is still updated below.
+        }
+      }
+
+      // Keep any localStorage copy in sync too.
       const allOrders: any[] = JSON.parse(localStorage.getItem('orders') || '[]');
       const updatedOrders = allOrders.map((o) => {
-        const currentId = String(o?._id || o?.id || o?.orderId || '').trim();
+        const currentId = String(o?.dbOrderId || o?._id || o?.id || o?.orderId || '').trim();
         if (currentId !== resolvedOrderId) return o;
 
         return {
@@ -152,10 +229,23 @@ export default function OrdersPage() {
           cancelledAt: new Date().toISOString(),
         };
       });
-
       localStorage.setItem('orders', JSON.stringify(updatedOrders));
-      const userOrders = updatedOrders.filter((o: any) => o.userId === user?.id);
-      setOrders(userOrders.reverse());
+
+      // Update the on-screen list.
+      setOrders((prev) =>
+        prev.map((o) =>
+          getOrderId(o) === resolvedOrderId
+            ? {
+                ...o,
+                status: 'cancelled',
+                paymentStatus:
+                  isRazorpay && isPaid && order.razorpayPaymentId
+                    ? 'refunded'
+                    : o.paymentStatus,
+              }
+            : o
+        )
+      );
 
       alert(
         refundId
