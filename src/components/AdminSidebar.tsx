@@ -80,6 +80,7 @@ export default function AdminSidebar() {
     { label: 'Analytics', href: '/admin/analytics', icon: Icons.analytics },
     { label: 'Orders', href: '/admin/orders', icon: Icons.orders },
     { label: 'Settlements', href: '/admin/settlements', icon: Icons.analytics },
+    { label: 'Bank Details', href: '/admin/bank-details', icon: Icons.analytics },
     { label: 'Wallet Mgmt', href: '/admin/wallet-management', icon: Icons.analytics },
     { label: 'Shipments', href: '/admin/shipments', icon: Icons.orders },
     { label: 'Lab Bookings', href: '/admin/lab-bookings', icon: Icons.orders },

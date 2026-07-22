@@ -1,18 +1,21 @@
 import { isTokenValid } from '@/lib/tokenUtils';
+import jwt from 'jsonwebtoken';
 
 /**
- * In-memory store for active admin tokens
- * Maps token -> { email, expiresAt, createdAt }
+ * Legacy in-memory store for UUID admin tokens issued before JWT migration.
+ * New logins use signed JWTs and do not depend on this Map.
  */
-const adminTokenStore = new Map<string, {
-  email: string;
-  expiresAt: number;
-  createdAt: number;
-}>();
+const adminTokenStore = new Map<
+  string,
+  {
+    email: string;
+    expiresAt: number;
+    createdAt: number;
+  }
+>();
 
 /**
- * Register a new admin token
- * Called after successful admin login
+ * Register a legacy/in-memory admin token (optional; JWT tokens are verified by signature).
  */
 export function registerAdminToken(
   token: string,
@@ -20,6 +23,10 @@ export function registerAdminToken(
   expiresAt: number,
   createdAt: number
 ): void {
+  // Skip storing JWT tokens — they are self-contained.
+  if (token.split('.').length === 3) {
+    return;
+  }
   adminTokenStore.set(token, {
     email,
     expiresAt,
@@ -27,9 +34,42 @@ export function registerAdminToken(
   });
 }
 
+function verifyAdminJwt(
+  token: string
+): { email: string; role: string; isAdmin: boolean } | null {
+  const secret = process.env.JWT_SECRET || process.env.ADMIN_JWT_SECRET;
+  if (!secret) return null;
+
+  try {
+    const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as {
+      role?: string;
+      email?: string;
+      userId?: string;
+    };
+
+    if (decoded.role !== 'admin') {
+      return null;
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
+    const tokenEmail = (decoded.email || '').toLowerCase();
+    if (adminEmail && tokenEmail && tokenEmail !== adminEmail) {
+      return null;
+    }
+
+    return {
+      email: tokenEmail || adminEmail || 'admin',
+      role: 'admin',
+      isAdmin: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Verify and retrieve admin user from token
- * Returns admin user object if valid, null if expired or invalid
+ * Verify and retrieve admin user from token.
+ * Prefers signed JWT (stateless). Falls back to legacy in-memory UUID tokens.
  */
 export async function verifyAdminToken(
   token: string
@@ -38,20 +78,21 @@ export async function verifyAdminToken(
     return null;
   }
 
-  const tokenData = adminTokenStore.get(token);
+  const jwtAdmin = verifyAdminJwt(token);
+  if (jwtAdmin) {
+    return jwtAdmin;
+  }
 
+  const tokenData = adminTokenStore.get(token);
   if (!tokenData) {
     return null;
   }
 
-  // Check if token has expired
   if (!isTokenValid(tokenData.expiresAt)) {
-    // Clean up expired token
     adminTokenStore.delete(token);
     return null;
   }
 
-  // Return admin user object
   return {
     email: tokenData.email,
     role: 'admin',
@@ -60,14 +101,14 @@ export async function verifyAdminToken(
 }
 
 /**
- * Revoke an admin token (logout)
+ * Revoke an admin token (logout) — only applies to legacy in-memory tokens.
  */
 export function revokeAdminToken(token: string): void {
   adminTokenStore.delete(token);
 }
 
 /**
- * Clear all expired tokens (cleanup)
+ * Clear all expired legacy tokens (cleanup)
  */
 export function cleanupExpiredTokens(): void {
   const now = Date.now();
@@ -79,7 +120,7 @@ export function cleanupExpiredTokens(): void {
 }
 
 /**
- * Get all active tokens count (for monitoring)
+ * Get all active legacy tokens count (for monitoring)
  */
 export function getActiveTokenCount(): number {
   cleanupExpiredTokens();

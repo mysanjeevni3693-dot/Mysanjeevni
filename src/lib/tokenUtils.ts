@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 
 interface TokenPayload {
   token: string;
@@ -8,18 +9,43 @@ interface TokenPayload {
 }
 
 const FIVE_DAYS_IN_MS = 5 * 24 * 60 * 60 * 1000; // 5 days in milliseconds
+const FIVE_DAYS_JWT = '5d';
+
+function getAdminJwtSecret(): string {
+  const secret = process.env.JWT_SECRET || process.env.ADMIN_JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not configured');
+  }
+  return secret;
+}
 
 /**
- * Generate a new admin token with 5-day expiration
+ * Generate a signed admin JWT with 5-day expiration.
+ * Stateless — survives server restarts / Turbopack reloads (unlike the old UUID + in-memory Map).
  */
 export function generateAdminToken(email: string): TokenPayload {
-  const token = crypto.randomUUID();
   const createdAt = Date.now();
   const expiresAt = createdAt + FIVE_DAYS_IN_MS;
+  const secret = getAdminJwtSecret();
+
+  const token = jwt.sign(
+    {
+      userId: 'admin',
+      email: email.toLowerCase(),
+      phone: '',
+      role: 'admin',
+      isVerified: true,
+    },
+    secret,
+    {
+      expiresIn: FIVE_DAYS_JWT,
+      algorithm: 'HS256',
+    }
+  );
 
   return {
     token,
-    email,
+    email: email.toLowerCase(),
     expiresAt,
     createdAt,
   };
@@ -52,7 +78,7 @@ export function getTokenRemainingTime(expiresAt: number): number {
  */
 export function getTokenRemainingTimeReadable(expiresAt: number): string {
   const remaining = getTokenRemainingTime(expiresAt);
-  
+
   const days = Math.floor(remaining / (24 * 60 * 60 * 1000));
   const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
   const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
@@ -64,4 +90,9 @@ export function getTokenRemainingTimeReadable(expiresAt: number): string {
   } else {
     return `${minutes} minute${minutes > 1 ? 's' : ''}`;
   }
+}
+
+/** Kept for rare callers that still need a random id. */
+export function generateRandomTokenId(): string {
+  return crypto.randomUUID();
 }

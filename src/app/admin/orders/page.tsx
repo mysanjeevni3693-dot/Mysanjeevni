@@ -46,6 +46,7 @@ export default function AdminOrders() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [showModal, setShowModal] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState('');
 
   useEffect(() => {
     fetchOrders();
@@ -81,11 +82,19 @@ export default function AdminOrders() {
 
   const fetchOrders = async () => {
     try {
+      setFetchError('');
+      const token = localStorage.getItem('adminToken') || '';
+      if (!token) {
+        setFetchError('Admin session missing. Please log in again.');
+        setOrders([]);
+        return;
+      }
+
       // The database is the source of truth for ALL customer orders. localStorage
       // is per-browser, so it only ever held orders placed on this device.
       const res = await fetch('/api/orders?admin=true', {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}`,
+          Authorization: `Bearer ${token}`,
         },
         cache: 'no-store',
       });
@@ -94,11 +103,19 @@ export default function AdminOrders() {
         const list = Array.isArray(data?.orders) ? data.orders.map(normalizeAdminOrder) : [];
         setOrders(list);
       } else {
-        console.error('Admin orders fetch failed', res.status);
+        const data = await res.json().catch(() => ({}));
+        const msg =
+          data?.error ||
+          (res.status === 401
+            ? 'Invalid or expired admin session. Please log out and log in again.'
+            : `Admin orders fetch failed (${res.status})`);
+        setFetchError(msg);
+        console.error('Admin orders fetch failed', res.status, data);
         setOrders([]);
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
+      setFetchError('Failed to load orders. Please try again.');
       setOrders([]);
     } finally {
       setLoading(false);
@@ -214,6 +231,15 @@ export default function AdminOrders() {
         <h1 className="text-4xl font-bold text-slate-900">Orders Management</h1>
         <p className="text-slate-600 mt-2">View all customer orders and vendor status updates</p>
       </div>
+
+      {fetchError && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {fetchError}{' '}
+          <a href="/login" className="underline font-medium">
+            Log in again
+          </a>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">

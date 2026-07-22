@@ -13,24 +13,55 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const checkAdmin = async () => {
       const token = localStorage.getItem('adminToken');
       const user = localStorage.getItem('user');
+      const adminEmail = localStorage.getItem('adminEmail');
+      const expiresAtRaw = localStorage.getItem('tokenExpiresAt');
+      const expiresAt = expiresAtRaw ? Number(expiresAtRaw) : 0;
 
       if (!token && !user) {
         router.push('/login');
         return;
       }
 
-      // Check if user has admin role
+      // Token expired client-side → force re-login
+      if (token && expiresAt > 0 && Date.now() >= expiresAt) {
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('tokenExpiresAt');
+        router.push('/login');
+        return;
+      }
+
+      // Prefer explicit admin session markers from login
+      if (token) {
+        if (user) {
+          try {
+            const userData = JSON.parse(user);
+            if (userData.role === 'admin' || userData.isAdmin === true) {
+              setIsAdmin(true);
+              setLoading(false);
+              return;
+            }
+          } catch {
+            /* fall through */
+          }
+        }
+        // adminToken alone is enough for layout gate; APIs verify JWT server-side
+        if (adminEmail || token.split('.').length === 3) {
+          setIsAdmin(true);
+          setLoading(false);
+          return;
+        }
+      }
+
       if (user) {
         try {
           const userData = JSON.parse(user);
-          // Check if user is admin (has admin role or is admin email)
           if (userData.role === 'admin' || userData.email === 'admin@MySanjeevni.com') {
             setIsAdmin(true);
           } else {
             router.push('/');
             return;
           }
-        } catch (error) {
+        } catch {
           router.push('/login');
           return;
         }
