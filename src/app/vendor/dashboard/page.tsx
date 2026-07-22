@@ -171,11 +171,18 @@ const NUTRITION_SUBCATEGORY_MAP = {
   'Sports Nutrition': ['Proteins', 'Fat Burner', 'Weight Gainers', 'Pre Post Workout', 'Aminos', 'Creatines'],
   'Health Food & Drinks': ['Spreads & Sugar & Honey', 'Oils', 'Herbal & Vegetable Juices', 'Health Drinks', 'Healthy Snacks & Bars', 'Sugar Free', 'Murabba', 'Chyawanprash', 'Edible Seeds'],
   'Vitamin & Dietary Supplements': ['Vitamin & Dietary Supplements'],
-  'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
   'Green Teas': ['Green Teas'],
   Digestives: ['Digestives'],
 } as const;
 type NutritionCategory = keyof typeof NUTRITION_SUBCATEGORY_MAP;
+
+const ORGANIC_PRODUCTS_SUBCATEGORY_MAP = {
+  'Organic Foods': ['Organic Foods'],
+  'Coffee & Tea': ['Coffee & Tea'],
+  Ghee: ['Ghee'],
+  'Atta/Flour': ['Atta/Flour'],
+} as const;
+type OrganicProductsCategory = keyof typeof ORGANIC_PRODUCTS_SUBCATEGORY_MAP;
 
 const PERSONAL_CARE_SUBCATEGORY_MAP = {
   'Aroma Oils': ['Essential Oils'],
@@ -314,8 +321,9 @@ const VENDOR_CATEGORY_MAP = {
     'Anaemia', 'Blood Purifiers', 'General Tonics', 'Weakness & Fatigue',
   ],
   Nutrition: [
-    'Sports Nutrition', 'Health Food & Drinks', 'Vitamin & Dietary Supplements', 'Organic Products', 'Green Teas', 'Digestives',
+    'Sports Nutrition', 'Health Food & Drinks', 'Vitamin & Dietary Supplements', 'Green Teas', 'Digestives',
   ],
+  'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
   'Personal Care': [
     'Aroma Oils', 'Mens Grooming', 'Female Care', 'Skin Care', 'Bath & Shower', 'Hair Care', 'Elderly Care', 'Mosquito Repellents', 'Oral Care',
   ],
@@ -535,6 +543,7 @@ export default function VendorDashboard() {
     if (productType === 'Homeopathy') return (HOMEOPATHY_SUBCATEGORY_MAP[category as HomeopathyCategory] || []) as unknown as string[];
     if (productType === 'Ayurveda Medicine') return (AYURVEDA_SUBCATEGORY_MAP[category as AyurvedaCategory] || []) as unknown as string[];
     if (productType === 'Nutrition') return (NUTRITION_SUBCATEGORY_MAP[category as NutritionCategory] || []) as unknown as string[];
+    if (productType === 'Organic Products') return (ORGANIC_PRODUCTS_SUBCATEGORY_MAP[category as OrganicProductsCategory] || []) as unknown as string[];
     if (productType === 'Personal Care') return (PERSONAL_CARE_SUBCATEGORY_MAP[category as PersonalCareCategory] || []) as unknown as string[];
     if (productType === 'Baby Care') return (BABY_CARE_SUBCATEGORY_MAP[category as BabyCareCategory] || []) as unknown as string[];
     if (productType === 'Fitness') return (FITNESS_SUBCATEGORY_MAP[category as FitnessCategory] || []) as unknown as string[];
@@ -1348,9 +1357,63 @@ export default function VendorDashboard() {
     URL.revokeObjectURL(url);
   };
 
+  const downloadBulkUploadTemplate = () => {
+    const sampleRows = [
+      {
+        Name: 'Sample Organic Honey',
+        Brand: 'Sample Brand',
+        'Product Type': 'Organic Products',
+        Category: 'Organic Foods',
+        Subcategory: '',
+        Price: 299,
+        'USD Price': 3.5,
+        MRP: 349,
+        Stock: 50,
+        Description: 'Sample product description',
+        Images: '',
+        RequiresPrescription: 'No',
+      },
+      {
+        Name: 'Sample Paracetamol 500mg',
+        Brand: 'Sample Pharma',
+        'Product Type': 'Generic Medicine',
+        Category: 'Pain Relief',
+        Subcategory: '',
+        Price: 45,
+        'USD Price': 0.55,
+        MRP: 60,
+        Stock: 200,
+        Description: 'Sample medicine description',
+        Images: '',
+        RequiresPrescription: 'No',
+      },
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(sampleRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
+    const workbookBlob = new Blob([XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })], {
+      type: 'application/octet-stream',
+    });
+    const url = URL.createObjectURL(workbookBlob);
+    const element = document.createElement('a');
+    element.href = url;
+    element.download = 'vendor-bulk-upload-template.xlsx';
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+    URL.revokeObjectURL(url);
+  };
+
   const handleBulkUpload = async () => {
     if (!bulkFile) {
       alert('Please select a file');
+      return;
+    }
+
+    const lowerName = bulkFile.name.toLowerCase();
+    if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls') && !lowerName.endsWith('.csv')) {
+      alert('Invalid file type. Please upload a .xlsx, .xls, or .csv file.');
       return;
     }
 
@@ -1360,18 +1423,25 @@ export default function VendorDashboard() {
     }
 
     setBulkUploading(true);
+    setBulkResult(null);
     try {
       const workbook = XLSX.read(await bulkFile.arrayBuffer(), { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(worksheet);
 
       if (!Array.isArray(data) || data.length === 0) {
-        alert('No valid product data found in file');
+        alert('No valid product data found in file. Make sure row 1 has column headers.');
         setBulkUploading(false);
         return;
       }
 
       const token = localStorage.getItem('vendorToken');
+      if (!token) {
+        alert('Vendor session expired. Please log in again.');
+        setBulkUploading(false);
+        return;
+      }
+
       const response = await fetch('/api/vendor/products/bulk-upload', {
         method: 'POST',
         headers: {
@@ -1388,16 +1458,18 @@ export default function VendorDashboard() {
       if (!response.ok) throw new Error(result.error || 'Bulk upload failed');
 
       setBulkResult(result);
-      // Keep modal open if there are errors, only close if all succeeded
+      if (result.successful > 0) {
+        fetchProducts();
+      }
       if (result.failed === 0) {
         alert(`Bulk upload completed: ${result.successful} successful!`);
         setShowBulkUpload(false);
         setBulkFile(null);
-        if (vendorInfo) {
-          fetchProducts();
-        }
+      } else {
+        alert(
+          `Bulk upload finished: ${result.successful} successful, ${result.failed} failed. See error details below.`
+        );
       }
-      // If there are failed uploads, leave modal open to show error details
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : 'Unknown error';
       alert('Error: ' + error);
@@ -2003,12 +2075,152 @@ export default function VendorDashboard() {
         {tab === 'products' && (
           <div>
             {vendorInfo.status === 'verified' && (
-              <button
-                onClick={() => setShowAddProduct(!showAddProduct)}
-                className="bg-linear-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all whitespace-nowrap mb-6"
-              >
-                {showAddProduct ? 'Cancel' : '+ Add Product'}
-              </button>
+              <div className="flex flex-wrap gap-3 mb-6">
+                <button
+                  onClick={() => setShowAddProduct(!showAddProduct)}
+                  className="bg-linear-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white px-6 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all whitespace-nowrap"
+                >
+                  {showAddProduct ? 'Cancel' : '+ Add Product'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBulkUpload(!showBulkUpload);
+                    if (!showBulkUpload) setBulkResult(null);
+                  }}
+                  className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
+                >
+                  📥 Bulk Upload
+                </button>
+                {products.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={exportProductsToExcel}
+                    className="inline-flex items-center gap-2 border border-slate-300 bg-white text-slate-700 px-5 py-2 rounded-lg font-semibold hover:bg-slate-50 transition-all"
+                  >
+                    📤 Export XLSX
+                  </button>
+                )}
+              </div>
+            )}
+
+            {vendorInfo.status === 'verified' && showBulkUpload && (
+              <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 mb-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Bulk Upload Products</h2>
+                <p className="text-sm text-slate-600 mb-4">
+                  Upload multiple products at once using an Excel or CSV file. Products are submitted for admin approval.
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-start gap-3 mb-4">
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                    onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
+                    className="border border-slate-300 rounded-lg px-3 py-2 w-full sm:w-auto"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleBulkUpload}
+                      disabled={!bulkFile || bulkUploading}
+                      className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-4 py-2 rounded-lg font-semibold transition-all"
+                    >
+                      {bulkUploading ? 'Uploading...' : 'Upload File'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadBulkUploadTemplate}
+                      className="border border-emerald-300 text-emerald-800 bg-emerald-50 px-4 py-2 rounded-lg font-medium hover:bg-emerald-100"
+                    >
+                      Download Sample Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBulkUpload(false);
+                        setBulkFile(null);
+                        setBulkResult(null);
+                      }}
+                      className="border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                  <p className="font-semibold text-slate-900 mb-2">Guidelines — File type & format</p>
+                  <ul className="list-disc ml-5 space-y-1 mb-3">
+                    <li>
+                      Accepted file types: <strong>.xlsx</strong>, <strong>.xls</strong>, or <strong>.csv</strong>
+                    </li>
+                    <li>Use the first sheet only. Row 1 must be column headers.</li>
+                    <li>Each following row is one product.</li>
+                    <li>Do not password-protect or zip the file.</li>
+                    <li>After upload, products appear as <strong>Pending</strong> until admin approval.</li>
+                  </ul>
+
+                  <p className="font-semibold text-slate-900 mb-2">Required / recommended columns</p>
+                  <ul className="list-disc ml-5 space-y-1">
+                    <li>
+                      <strong>Name</strong> (or Product Name) — required
+                    </li>
+                    <li>
+                      <strong>Category</strong> — required (e.g. Organic Foods, Pain Relief, Skin Care)
+                    </li>
+                    <li>
+                      <strong>Price</strong> — required (INR)
+                    </li>
+                    <li>
+                      <strong>Product Type</strong> — recommended (Generic Medicine, Ayurveda Medicine, Homeopathy, Nutrition, Organic Products, Personal Care, Fitness, Sexual Wellness, Unani, Baby Care, Lab Tests)
+                    </li>
+                    <li>
+                      <strong>Subcategory</strong> — optional
+                    </li>
+                    <li>
+                      <strong>Brand</strong>, <strong>MRP</strong>, <strong>Stock</strong>, <strong>USD Price</strong>, <strong>Description</strong> — optional
+                    </li>
+                    <li>
+                      <strong>Images</strong> — optional; Cloudinary image URL(s), comma-separated (max 4)
+                    </li>
+                    <li>
+                      <strong>RequiresPrescription</strong> — Yes / No (optional)
+                    </li>
+                  </ul>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Tip: Download the sample template, replace the sample rows with your products, save as .xlsx, then upload.
+                  </p>
+                </div>
+
+                {bulkResult && (
+                  <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
+                    <div className="font-semibold text-gray-900 mb-2">
+                      Upload Result: {bulkResult.successful} successful, {bulkResult.failed} failed
+                    </div>
+                    {bulkResult.failed > 0 && bulkResult.errors && (
+                      <div className="mt-3">
+                        <div className="font-medium text-red-700 mb-2">Errors:</div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {bulkResult.errors.slice(0, 10).map((err: any, idx: number) => (
+                            <div key={idx} className="bg-red-50 border border-red-200 rounded p-2 text-sm">
+                              <div className="font-semibold text-red-800">Row {err.row}:</div>
+                              <div className="text-red-700">{err.error}</div>
+                              {err.data?.name && (
+                                <div className="text-gray-600 text-xs mt-1">Product: {err.data.name}</div>
+                              )}
+                            </div>
+                          ))}
+                          {bulkResult.failed > 10 && (
+                            <div className="text-gray-600 text-sm">
+                              ... and {bulkResult.failed - 10} more errors
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {showAddProduct && (
@@ -2147,7 +2359,7 @@ export default function VendorDashboard() {
 
                       for (let i = 0; i < 10; i++) {
                         let options = getNodeChildren(currentLevelName, categoryTree);
-                        // Level 0: always merge essential categories (e.g. Organic Products under Nutrition)
+                        // Level 0: always merge essential categories from config map
                         if (i === 0) {
                           const fallback = activeVendorCategoryMap[productTypeName] || [];
                           options = Array.from(new Set([...(options || []), ...fallback]));
@@ -2867,78 +3079,11 @@ export default function VendorDashboard() {
 
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
               {products.length === 0 ? (
-                <p className="p-6 text-center text-gray-500">No products yet</p>
+                <p className="p-6 text-center text-gray-500">
+                  No products yet. Use <strong>+ Add Product</strong> or <strong>Bulk Upload</strong> to add products.
+                </p>
               ) : (
                 <>
-                  <div className="px-6 py-4 border-b border-gray-200 flex gap-3 flex-wrap">
-                    <button
-                      onClick={exportProductsToExcel}
-                      className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
-                    >
-                      📤 Export XLSX
-                    </button>
-                    <button
-                      onClick={() => setShowBulkUpload(!showBulkUpload)}
-                      className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
-                    >
-                      📥 Bulk Upload
-                    </button>
-                  </div>
-
-                  {showBulkUpload && (
-                    <div className="px-6 py-4 border-b border-gray-200 bg-slate-50">
-                      <div className="flex gap-3 items-center flex-wrap">
-                        <input
-                          type="file"
-                          accept=".xlsx,.xls,.csv"
-                          onChange={(e) => setBulkFile(e.target.files?.[0] || null)}
-                          className="border border-slate-300 rounded-lg px-3 py-2"
-                        />
-                        <button
-                          onClick={handleBulkUpload}
-                          disabled={!bulkFile || bulkUploading}
-                          className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white px-4 py-2 rounded-lg font-semibold transition-all"
-                        >
-                          {bulkUploading ? 'Uploading...' : 'Upload'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowBulkUpload(false);
-                            setBulkFile(null);
-                          }}
-                          className="border border-slate-300 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-100"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-
-                      {bulkResult && (
-                        <div className="mt-4 p-4 bg-white rounded-lg border border-gray-200">
-                          <div className="font-semibold text-gray-900 mb-2">
-                            Upload Result: {bulkResult.successful} successful, {bulkResult.failed} failed
-                          </div>
-                          {bulkResult.failed > 0 && bulkResult.errors && (
-                            <div className="mt-3">
-                              <div className="font-medium text-red-700 mb-2">Errors:</div>
-                              <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {bulkResult.errors.slice(0, 5).map((err: any, idx: number) => (
-                                  <div key={idx} className="bg-red-50 border border-red-200 rounded p-2 text-sm">
-                                    <div className="font-semibold text-red-800">Row {err.row}:</div>
-                                    <div className="text-red-700">{err.error}</div>
-                                    {err.data?.name && <div className="text-gray-600 text-xs mt-1">Product: {err.data.name}</div>}
-                                  </div>
-                                ))}
-                                {bulkResult.failed > 5 && (
-                                  <div className="text-gray-600 text-sm">... and {bulkResult.failed - 5} more errors</div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
                   <table className="w-full">
                     <thead className="bg-emerald-600">
                       <tr>

@@ -54,10 +54,10 @@ const VENDOR_CATEGORY_MAP = {
     'Sports Nutrition',
     'Health Food & Drinks',
     'Vitamin & Dietary Supplements',
-    'Organic Products',
     'Green Teas',
     'Digestives',
   ],
+  'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
   'Personal Care': [
     'Aroma Oils',
     'Mens Grooming',

@@ -77,7 +77,8 @@ async function ensureDefaultCategoryTree() {
 }
 
 /**
- * Patch existing DB trees that were seeded before Organic Products existed under Nutrition.
+ * Ensure Organic Products exists as its own Product Type (sibling of Nutrition, not under it).
+ * Migrates any misplaced Organic Products node that was nested under Nutrition.
  * Idempotent — safe to run on every categories GET.
  */
 async function ensureEssentialCategories() {
@@ -89,46 +90,70 @@ async function ensureEssentialCategories() {
   const nutritionType = await CategoryNode.findOne({
     name: 'Nutrition',
     parentId: productRoot._id,
-    isActive: { $ne: false },
-  });
-  if (!nutritionType) return;
-
-  let organicCategory = await CategoryNode.findOne({
-    name: 'Organic Products',
-    parentId: nutritionType._id,
   });
 
-  if (!organicCategory) {
-    organicCategory = await CategoryNode.create({
+  // Misplaced: Organic Products was previously nested under Nutrition — promote or remove.
+  if (nutritionType) {
+    const nestedOrganic = await CategoryNode.findOne({
       name: 'Organic Products',
       parentId: nutritionType._id,
-      sortOrder: 3,
-      isActive: true,
     });
-  } else if (organicCategory.isActive === false) {
-    organicCategory.isActive = true;
-    await organicCategory.save();
+    if (nestedOrganic) {
+      const existingTopLevel = await CategoryNode.findOne({
+        name: 'Organic Products',
+        parentId: productRoot._id,
+      });
+      if (existingTopLevel) {
+        // Move children to the top-level type, then remove the nested duplicate.
+        await CategoryNode.updateMany(
+          { parentId: nestedOrganic._id },
+          { parentId: existingTopLevel._id }
+        );
+        await CategoryNode.findByIdAndDelete(nestedOrganic._id);
+      } else {
+        nestedOrganic.parentId = productRoot._id;
+        nestedOrganic.isActive = true;
+        await nestedOrganic.save();
+      }
+    }
   }
 
-  const organicSubs =
-    FALLBACK_SUBCATEGORY_MAP_BY_TYPE.Nutrition?.['Organic Products'] ||
+  let organicType = await CategoryNode.findOne({
+    name: 'Organic Products',
+    parentId: productRoot._id,
+  });
+
+  if (!organicType) {
+    organicType = await CategoryNode.create({
+      name: 'Organic Products',
+      parentId: productRoot._id,
+      sortOrder: 6,
+      isActive: true,
+    });
+  } else if (organicType.isActive === false) {
+    organicType.isActive = true;
+    await organicType.save();
+  }
+
+  const organicCategories =
+    FALLBACK_VENDOR_CATEGORY_MAP['Organic Products'] ||
     (['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'] as const);
 
-  for (const subName of organicSubs) {
-    const existing = await CategoryNode.findOne({
-      name: subName,
-      parentId: organicCategory._id,
+  for (const categoryName of organicCategories) {
+    let categoryNode = await CategoryNode.findOne({
+      name: categoryName,
+      parentId: organicType._id,
     });
-    if (!existing) {
-      await CategoryNode.create({
-        name: subName,
-        parentId: organicCategory._id,
+    if (!categoryNode) {
+      categoryNode = await CategoryNode.create({
+        name: categoryName,
+        parentId: organicType._id,
         sortOrder: 0,
         isActive: true,
       });
-    } else if (existing.isActive === false) {
-      existing.isActive = true;
-      await existing.save();
+    } else if (categoryNode.isActive === false) {
+      categoryNode.isActive = true;
+      await categoryNode.save();
     }
   }
 }

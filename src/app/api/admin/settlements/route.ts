@@ -44,7 +44,7 @@ async function buildVendorPayableSummary(vendorId: string) {
         productIds.includes(String(item.productId || ''))
     );
     grossSales += ownItems.reduce(
-      (sum: number, item: any) => sum + Number(item.total ?? item.price * item.quantity ?? 0),
+      (sum: number, item: any) => sum + Number(item.total ?? (Number(item.price || 0) * Number(item.quantity || 0))),
       0
     );
   }

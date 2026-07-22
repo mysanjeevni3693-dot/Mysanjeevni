@@ -94,13 +94,15 @@ function getHierarchyGroups(config: DynamicCategoryConfig | null, categoryName: 
   }
 
   if (categoryName === 'Nutrition') {
-    return Object.keys(subByType.Nutrition || {});
+    return Object.keys(subByType.Nutrition || {}).filter(
+      (name) => normalizeName(name) !== 'organic products'
+    );
   }
 
   if (categoryName === 'Organic Products') {
-    const nutritionOrganic = subByType.Nutrition?.['Organic Products'] || [];
-    if (nutritionOrganic.length > 0) return nutritionOrganic;
-    return Object.keys(subByType['Organic Products'] || {});
+    const asType = Object.keys(subByType['Organic Products'] || {});
+    if (asType.length > 0) return asType;
+    return vendorMap['Organic Products'] || [];
   }
 
   if (categoryName === 'Personal Care') {
@@ -245,8 +247,7 @@ export default function AdminCategoriesPage() {
     }
 
     if (normalizeName(groupName) === 'organic products') {
-      const nutritionNode = findNodeByName(tree, 'Nutrition');
-      return nutritionNode?._id ?? productTypesRoot?._id ?? null;
+      return productTypesRoot?._id ?? null;
     }
 
     return productTypesRoot?._id ?? null;

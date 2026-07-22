@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
           productIds.includes(String(item.productId || ''))
       );
       const vendorSubtotal = ownItems.reduce(
-        (sum: number, item: any) => sum + Number(item.total ?? item.price * item.quantity ?? 0),
+        (sum: number, item: any) => sum + Number(item.total ?? (Number(item.price || 0) * Number(item.quantity || 0))),
         0
       );
       return {
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
           productIds.includes(String(item.productId || ''))
       );
       const vendorSubtotal = ownItems.reduce(
-        (sum: number, item: any) => sum + Number(item.total ?? item.price * item.quantity ?? 0),
+        (sum: number, item: any) => sum + Number(item.total ?? (Number(item.price || 0) * Number(item.quantity || 0))),
         0
       );
 

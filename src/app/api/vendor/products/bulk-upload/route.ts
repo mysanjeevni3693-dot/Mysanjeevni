@@ -54,10 +54,10 @@ const VENDOR_CATEGORY_MAP = {
     'Sports Nutrition',
     'Health Food & Drinks',
     'Vitamin & Dietary Supplements',
-    'Organic Products',
     'Green Teas',
     'Digestives',
   ],
+  'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
   'Personal Care': [
     'Aroma Oils',
     'Mens Grooming',
@@ -275,7 +275,14 @@ export async function POST(request: NextRequest) {
         // NOTE: Images are now OPTIONAL - no error if missing or invalid
 
         const { resolvedType, normalizedCategory } = resolveTypeAndCategory(
-          product.productType,
+          getFieldValue(product, [
+            'productType',
+            'product_type',
+            'Product Type',
+            'ProductType',
+            'Type',
+            'TYPE',
+          ]),
           category
         );
 
@@ -287,9 +294,27 @@ export async function POST(request: NextRequest) {
         const mrp = mrpStr ? Number(mrpStr) : undefined;
         const description = getFieldValue(product, ['description', 'desc', 'Description', 'Desc', 'DESCRIPTION']) || '';
         const brand = getFieldValue(product, ['brand', 'manufacturer', 'Brand', 'Manufacturer', 'BRAND', 'MANUFACTURER']) || undefined;
+        const subcategory =
+          getFieldValue(product, [
+            'subcategory',
+            'subCategory',
+            'Subcategory',
+            'Sub Category',
+            'SUBCATEGORY',
+          ]) || undefined;
 
         // Handle image URLs (multiple images support)
         const finalImages = imageArray.filter((img: any) => isCloudinaryImageUrl(img));
+
+        if (!name.trim()) {
+          throw new Error('Product name is required');
+        }
+        if (!normalizedCategory) {
+          throw new Error('Category is required (e.g. Organic Products, Antibiotics)');
+        }
+        if (!Number.isFinite(priceValue) || priceValue < 0) {
+          throw new Error('Valid Price is required');
+        }
 
         const createdProduct = await Product.create({
           _id: productId,
@@ -297,6 +322,7 @@ export async function POST(request: NextRequest) {
           name,
           brand,
           category: normalizedCategory,
+          subcategory,
           productType: resolvedType,
           price: priceValue,
           usdPrice: usdPriceValue,
@@ -307,7 +333,15 @@ export async function POST(request: NextRequest) {
           images: finalImages.slice(0, 4), // Max 4 images
           isActive: true,
           approvalStatus: 'pending',
-          requiresPrescription: String(product.requiresPrescription || '')
+          requiresPrescription: String(
+            getFieldValue(product, [
+              'requiresPrescription',
+              'RequiresPrescription',
+              'Requires Prescription',
+              'Rx',
+              'Prescription',
+            ]) || product.requiresPrescription || ''
+          )
             .toLowerCase()
             .startsWith('y'),
         });

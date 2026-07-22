@@ -96,7 +96,7 @@ const getTreeNodeHref = (categoryName: string, path: string[]) => {
   }
 
   if (categoryName === 'Organic Products') {
-    return `${getCategoryBasePath(categoryName)}?category=nutrition&subcategory=${encodeURIComponent(linkName)}&orgProductsView=true#products-section`;
+    return `${getCategoryBasePath(categoryName)}?category=${encodeURIComponent(linkName)}#products-section`;
   }
 
   return `${getCategoryBasePath(categoryName)}?category=${encodeURIComponent(
@@ -467,7 +467,10 @@ const getDynamicGroupedByCategory = (
   const diseaseMap = config.diseaseSubcategoryMap || {};
 
   const nutritionMap = pickFirstMap(subByType, ['Nutrition']) || NUTRITION_GROUPED_SUBCATEGORIES;
-  const organicProductsFromNutrition = nutritionMap['Organic Products'];
+  // Keep Nutrition free of Organic Products (Organic is its own top-level type).
+  const nutritionWithoutOrganic = Object.fromEntries(
+    Object.entries(nutritionMap).filter(([key]) => key.trim().toLowerCase() !== 'organic products')
+  );
 
   return {
     Medicines:
@@ -479,10 +482,10 @@ const getDynamicGroupedByCategory = (
       AYURVEDA_GROUPED_SUBCATEGORIES,
     Homeopathy:
       pickFirstMap(subByType, ['Homeopathy']) || HOMEOPATHY_GROUPED_SUBCATEGORIES,
-    Nutrition: nutritionMap,
+    Nutrition: nutritionWithoutOrganic,
     'Organic Products':
-      (organicProductsFromNutrition && toSingleGroup('Organic Products', organicProductsFromNutrition)) ||
       pickFirstMap(subByType, ['Organic Products']) ||
+      toSingleGroup('Organic Products', vendorMap['Organic Products']) ||
       ORGANIC_PRODUCTS_GROUPED_SUBCATEGORIES,
     'Personal Care':
       pickFirstMap(subByType, ['Personal Care']) || PERSONAL_CARE_GROUPED_SUBCATEGORIES,
@@ -638,8 +641,11 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
     }
 
     if (categoryName === 'Organic Products') {
-      // For Organic Products, redirect to nutrition with organic subcategory and special flag
-      return buildHref('/medicines', { category: 'nutrition', subcategory: subcategoryName, orgProductsView: 'true' });
+      return buildHref('/medicines', {
+        category: subcategoryName,
+        productType: 'Organic Products',
+        orgProductsView: 'true',
+      });
     }
 
     // For all other categories (Nutrition, Personal Care, Fitness, etc.)

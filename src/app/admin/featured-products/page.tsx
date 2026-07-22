@@ -79,8 +79,10 @@ const FEATURED_CATEGORY_MAP = {
   ],
   Nutrition: [
     'Proteins', 'Fat Burner', 'Weight Gainers', 'Pre Post Workout', 'Aminos', 'Creatines',
-    'Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour',
     'Spreads, Sugar & Honey', 'Oils', 'Health Drinks', 'Healthy Snacks & Bars', 'Sugar Free', 'Murabba', 'Edible Seeds',
+  ],
+  'Organic Products': [
+    'Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour',
   ],
   'Personal Care': [
     'Essential Oils', 'Face', 'Body', 'Foot Care', 'Sanitizers & Hand Wash',
@@ -137,8 +139,13 @@ const FEATURED_CATEGORY_GROUPED_MAP: Partial<Record<FeaturedCategory, FeaturedCa
   },
   Nutrition: {
     'Sports Nutrition': ['Proteins', 'Fat Burner', 'Weight Gainers', 'Pre Post Workout', 'Aminos', 'Creatines'],
-    'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
     'Health Food & Drinks': ['Spreads, Sugar & Honey', 'Oils', 'Health Drinks', 'Healthy Snacks & Bars', 'Sugar Free', 'Murabba', 'Edible Seeds'],
+  },
+  'Organic Products': {
+    'Organic Foods': ['Organic Foods'],
+    'Coffee & Tea': ['Coffee & Tea'],
+    Ghee: ['Ghee'],
+    'Atta/Flour': ['Atta/Flour'],
   },
   'Personal Care': {
     'Aroma Oils': ['Essential Oils'],

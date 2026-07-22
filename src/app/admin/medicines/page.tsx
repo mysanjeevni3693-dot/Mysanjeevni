@@ -70,7 +70,7 @@ interface DynamicCategoryConfig {
   labCategories?: string[];
 }
 
-const PROD_CATEGORIES = ['Disease', 'Homeopathy', 'Ayurveda', 'Nutrition', 'Personal Care', 'Baby Care', 'Sexual Wellness', 'Fitness', 'Consultation', 'Unani', 'Allopathy'];
+const PROD_CATEGORIES = ['Disease', 'Homeopathy', 'Ayurveda', 'Nutrition', 'Organic Products', 'Personal Care', 'Baby Care', 'Sexual Wellness', 'Fitness', 'Consultation', 'Unani', 'Allopathy'];
 const LAB_CATEGORIES = ['General', 'Diabetes', 'Cardiac', 'Thyroid', 'Liver', 'Kidney', 'Vitamins', 'Infection', 'Women'];
 const POTENCY_OPTIONS = ['1000 CH', '3 CH', '10M CH', '200 CH', '30 CH', '12 CH', '6 CH', 'CM CH', '50M CH'];
 const QUANTITY_UNIT_OPTIONS = ['None', 'BAGS (Bag)', 'BOTTLES (Btl)', 'BOX (Box)', 'BUNDLES (Bdl)', 'CANS (Can)', 'CAPSULES (CAPS)', 'CARTONS (Ctn)', 'DOZENS (Dzn)', 'GRAMMES (Gm)', 'KILOGRAMS (Kg)', 'LITRE (Ltr)', 'METERS (Mtr)', 'MILILITRE (MI)', 'NUMBERS (Nos)', 'PACKS (Pac)', 'PAIRS (Prs)', 'PIECES (Pcs)', 'QUINTAL (Qtl)', 'ROLLS (Rol)', 'SACHET (SACH)', 'SQUARE FEET (Sqf)', 'SQUARE METERS (Sqm)', 'TABLETS (Tbs)'];
@@ -127,12 +127,20 @@ const NUTRITION_SUBCATEGORY_MAP = {
   'Sports Nutrition': ['Proteins', 'Fat Burner', 'Weight Gainers', 'Pre Post Workout', 'Aminos', 'Creatines'],
   'Health Food & Drinks': ['Spreads & Sugar & Honey', 'Oils', 'Herbal & Vegetable Juices', 'Health Drinks', 'Healthy Snacks & Bars', 'Sugar Free', 'Murabba', 'Chyawanprash', 'Edible Seeds'],
   'Vitamin & Dietary Supplements': ['Vitamin & Dietary Supplements'],
-  'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
   'Green Teas': ['Green Teas'],
   Digestives: ['Digestives'],
 } as const;
 
 type NutritionCategory = keyof typeof NUTRITION_SUBCATEGORY_MAP;
+
+const ORGANIC_PRODUCTS_SUBCATEGORY_MAP = {
+  'Organic Foods': ['Organic Foods'],
+  'Coffee & Tea': ['Coffee & Tea'],
+  Ghee: ['Ghee'],
+  'Atta/Flour': ['Atta/Flour'],
+} as const;
+
+type OrganicProductsCategory = keyof typeof ORGANIC_PRODUCTS_SUBCATEGORY_MAP;
 
 const PERSONAL_CARE_SUBCATEGORY_MAP = {
   'Aroma Oils': ['Essential Oils'],
@@ -311,10 +319,10 @@ const VENDOR_CATEGORY_MAP = {
     'Sports Nutrition',
     'Health Food & Drinks',
     'Vitamin & Dietary Supplements',
-    'Organic Products',
     'Green Teas',
     'Digestives',
   ],
+  'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
   'Personal Care': [
     'Aroma Oils',
     'Mens Grooming',
@@ -526,6 +534,7 @@ export default function AdminMedicines() {
     if (productType === 'Homeopathy') return (HOMEOPATHY_SUBCATEGORY_MAP[category as HomeopathyCategory] || []) as unknown as string[];
     if (productType === 'Ayurveda Medicine') return (AYURVEDA_SUBCATEGORY_MAP[category as AyurvedaCategory] || []) as unknown as string[];
     if (productType === 'Nutrition') return (NUTRITION_SUBCATEGORY_MAP[category as NutritionCategory] || []) as unknown as string[];
+    if (productType === 'Organic Products') return (ORGANIC_PRODUCTS_SUBCATEGORY_MAP[category as OrganicProductsCategory] || []) as unknown as string[];
     if (productType === 'Personal Care') return (PERSONAL_CARE_SUBCATEGORY_MAP[category as PersonalCareCategory] || []) as unknown as string[];
     if (productType === 'Baby Care') return (BABY_CARE_SUBCATEGORY_MAP[category as BabyCareCategory] || []) as unknown as string[];
     if (productType === 'Fitness') return (FITNESS_SUBCATEGORY_MAP[category as FitnessCategory] || []) as unknown as string[];
@@ -1230,8 +1239,8 @@ export default function AdminMedicines() {
                     
                     // Build hierarchy levels
                     for (let i = 0; i < 10; i++) {
-                      // Level 0: categories under the selected product type — prefer config map
-                      // so essential categories like "Organic Products" always appear.
+                      // Level 0: categories under the selected product type — merge config + tree
+                      // so essential categories always appear.
                       if (i === 0) {
                         const fromConfig = activeVendorCategoryMap[productTypeName] || [];
                         const fromTree = getNodeChildren(productTypeName);

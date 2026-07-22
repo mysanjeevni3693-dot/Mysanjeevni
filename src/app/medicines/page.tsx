@@ -102,9 +102,14 @@ const GROUPED_SUBCATEGORIES_MAP: Record<string, Record<string, string[]>> = {
     'Sports Nutrition': ['Proteins', 'Fat Burner', 'Weight Gainers', 'Pre Post Workout', 'Aminos', 'Creatines'],
     'Health Food & Drinks': ['Spreads & Sugar & Honey', 'Oils', 'Herbal & Vegetable Juices', 'Health Drinks', 'Healthy Snacks & Bars', 'Sugar Free', 'Murabba', 'Chyawanprash', 'Edible Seeds'],
     'Vitamin & Dietary Supplements': ['Vitamin & Dietary Supplements'],
-    'Organic Products': ['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'],
     'Green Teas': ['Green Teas'],
     'Digestives': ['Digestives'],
+  },
+  'organic products': {
+    'Organic Foods': ['Organic Foods'],
+    'Coffee & Tea': ['Coffee & Tea'],
+    Ghee: ['Ghee'],
+    'Atta/Flour': ['Atta/Flour'],
   },
   personalcare: {
     'Aroma Oils': ['Essential Oils'],
@@ -237,10 +242,14 @@ const CATEGORY_TO_PRODUCT_TYPE: Record<string, string> = {
   'ayurveda': 'Ayurveda Medicine',
   'homeopathy': 'Homeopathy',
   'nutrition': 'Nutrition',
+  'organic products': 'Organic Products',
   'personalcare': 'Personal Care',
+  'personal care': 'Personal Care',
   'fitness': 'Fitness',
   'babycare': 'Baby Care',
+  'baby care': 'Baby Care',
   'sexualwellness': 'Sexual Wellness',
+  'sexual wellness': 'Sexual Wellness',
   'unani': 'Unani',
 };
 
@@ -502,10 +511,13 @@ function MedicinesContent() {
     return tabFiltered.filter((p) => {
       // If viewing organic products, only show products with organic subcategories
       if (isOrgProductsView) {
-        const isOrgProduct = ORGANIC_PRODUCTS_SUBCATS.some(subcat => 
-          equalsIgnoreCase(p.subcategory, subcat)
+        const isOrgType = equalsIgnoreCase(p.productType, 'Organic Products');
+        const isOrgCategory = equalsIgnoreCase(p.category, 'Organic Products');
+        const isOrgSubcat = ORGANIC_PRODUCTS_SUBCATS.some(
+          (subcat) =>
+            equalsIgnoreCase(p.subcategory, subcat) || equalsIgnoreCase(p.category, subcat)
         );
-        if (!isOrgProduct) return false;
+        if (!isOrgType && !isOrgCategory && !isOrgSubcat) return false;
       }
 
       const matchCat =
