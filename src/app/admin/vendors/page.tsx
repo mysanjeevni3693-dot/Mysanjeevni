@@ -92,7 +92,7 @@ export default function AdminVendors() {
       });
 
       if (!response.ok) throw new Error('Failed to reject vendor');
-      setMessage('✅ Vendor rejected');
+      setMessage('✅ Vendor rejected (account retained — can be reactivated later)');
       setSelectedVendor(null);
       setRejectionReason('');
       fetchVendors();
@@ -256,6 +256,33 @@ export default function AdminVendors() {
                         className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
                       >
                         Reactivate
+                      </button>
+                    )}
+
+                    {filter === 'rejected' && (
+                      <button
+                        onClick={() => {
+                          fetch('/api/admin/vendors', {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              vendorId: vendor._id,
+                              action: 'reactivate',
+                            }),
+                          })
+                            .then((res) => {
+                              if (!res.ok) throw new Error('Failed to reactivate');
+                              setMessage('✅ Vendor reactivated / approved');
+                              fetchVendors();
+                            })
+                            .catch((err: unknown) => {
+                              const error = err instanceof Error ? err.message : 'Unknown error';
+                              setMessage('❌ ' + error);
+                            });
+                        }}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                      >
+                        Approve & Reactivate
                       </button>
                     )}
                   </div>

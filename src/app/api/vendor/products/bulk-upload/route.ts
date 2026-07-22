@@ -3,7 +3,7 @@ import { connectDB } from '@/lib/db';
 import { Product } from '@/lib/models/Product';
 import { generateProductId } from '@/lib/utils/productIdGenerator';
 import { Vendor } from '@/lib/models/Vendor';
-import jwt from 'jsonwebtoken';
+import { requireVendorAuth, isAuthError } from '@/lib/vendorAuth';
 
 const VENDOR_CATEGORY_MAP = {
   'Generic Medicine': [
@@ -168,21 +168,6 @@ function resolveTypeAndCategory(productType: string | undefined, category: strin
   return { resolvedType, normalizedCategory };
 }
 
-// Verify vendor token
-async function verifyVendorToken(authHeader?: string): Promise<string | null> {
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  
-  const token = authHeader.slice(7);
-  const secret = process.env.VENDOR_JWT_SECRET || 'vendor-secret-key';
-  
-  try {
-    const decoded: any = jwt.verify(token, secret);
-    return decoded.vendorId || decoded.id;
-  } catch (error) {
-    return null;
-  }
-}
-
 // Flexible field value getter supporting multiple column name variations
 function getFieldValue(obj: any, possibleNames: string[]): string | undefined {
   if (!obj || typeof obj !== 'object') return undefined;
@@ -209,30 +194,14 @@ function getFieldValue(obj: any, possibleNames: string[]): string | undefined {
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireVendorAuth(request);
+    if (isAuthError(auth)) return auth;
+
     await connectDB();
 
-    // Verify vendor authentication
-    const authHeader = request.headers.get('authorization');
-    const vendorIdFromToken = await verifyVendorToken(authHeader ?? undefined);
-    
     const body = await request.json();
-    const { vendorId, products } = body;
-
-    // Validate vendor ID
-    if (!vendorId) {
-      return NextResponse.json(
-        { error: 'Vendor ID is required' },
-        { status: 400 }
-      );
-    }
-
-    // Check token vendor matches request vendor
-    if (vendorIdFromToken && vendorIdFromToken !== vendorId) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Token vendor does not match request vendor' },
-        { status: 403 }
-      );
-    }
+    const vendorId = auth.vendorId;
+    const { products } = body;
 
     // Validate products array
     if (!Array.isArray(products) || products.length === 0) {

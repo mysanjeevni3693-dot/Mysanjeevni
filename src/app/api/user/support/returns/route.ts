@@ -47,9 +47,50 @@ export async function POST(request: NextRequest) {
       userEmail: String(userEmail).trim().toLowerCase(),
       orderId: String(orderId).trim(),
       productName: String(productName).trim(),
+      productId: body.productId ? String(body.productId).trim() : '',
+      vendorId: '',
       reason: String(reason).trim(),
       preferredResolution: preferredResolution || 'support-review',
     });
+
+    // Stamp vendorId from product or order line item when possible.
+    try {
+      const { Product } = await import('@/lib/models/Product');
+      const { Order } = await import('@/lib/models/Order');
+      let vendorId = '';
+      if (body.productId) {
+        const product = await Product.findById(body.productId).select('vendorId');
+        if (product?.vendorId) vendorId = String(product.vendorId);
+      }
+      if (!vendorId && productName) {
+        const product = await Product.findOne({ name: productName }).select('vendorId');
+        if (product?.vendorId) vendorId = String(product.vendorId);
+      }
+      if (!vendorId && orderId) {
+        const order = await Order.findById(orderId).select('items');
+        const match = (order?.items || []).find(
+          (i: any) =>
+            String(i.productName || '').toLowerCase() === String(productName).toLowerCase() ||
+            (body.productId && String(i.productId) === String(body.productId))
+        );
+        if (match?.vendorId) vendorId = String(match.vendorId);
+      }
+      if (vendorId) {
+        requestRecord.vendorId = vendorId;
+        await requestRecord.save();
+        const { notifyVendor } = await import('@/lib/vendorNotifications');
+        await notifyVendor({
+          vendorId,
+          type: preferredResolution === 'refund' ? 'refund_request' : 'return_request',
+          title: preferredResolution === 'refund' ? 'New refund request' : 'New return request',
+          message: `${productName} — ${String(reason).slice(0, 120)}`,
+          relatedId: String(requestRecord._id),
+          actionUrl: '/vendor/dashboard/returns',
+        });
+      }
+    } catch (e) {
+      console.error('Return vendor stamp/notify failed (non-fatal):', e);
+    }
 
     return NextResponse.json(
       {

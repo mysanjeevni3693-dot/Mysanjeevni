@@ -182,6 +182,7 @@ export async function PUT(request: NextRequest) {
       update.isPopularHomeopathy = normalizedPopularSection === 'Homeopathy';
       update.isPopularLabTests = normalizedPopularSection === 'LabTests';
     }
+    const previous = await Product.findById(_id).select('approvalStatus vendorId name stock');
     const updated = await Product.findByIdAndUpdate(
       _id,
       {
@@ -199,6 +200,40 @@ export async function PUT(request: NextRequest) {
         { error: 'Product not found' },
         { status: 404 }
       );
+    }
+
+    // Notify vendor on approval/rejection and stock thresholds.
+    try {
+      const vendorId = String(updated.vendorId || previous?.vendorId || '');
+      if (vendorId) {
+        const { notifyVendor, maybeNotifyStock } = await import('@/lib/vendorNotifications');
+        const prevStatus = String(previous?.approvalStatus || '');
+        const nextStatus = String(updated.approvalStatus || '');
+        if (nextStatus === 'approved' && prevStatus !== 'approved') {
+          await notifyVendor({
+            vendorId,
+            type: 'product_approved',
+            title: 'Product approved',
+            message: `${updated.name} is now live on the storefront`,
+            relatedId: String(updated._id),
+            actionUrl: '/vendor/dashboard',
+          });
+        } else if (nextStatus === 'rejected' && prevStatus !== 'rejected') {
+          await notifyVendor({
+            vendorId,
+            type: 'product_rejected',
+            title: 'Product rejected',
+            message: `${updated.name} was rejected by admin`,
+            relatedId: String(updated._id),
+            actionUrl: '/vendor/dashboard',
+          });
+        }
+        if (update.stock !== undefined && Number(updated.stock) !== Number(previous?.stock)) {
+          await maybeNotifyStock(updated);
+        }
+      }
+    } catch (e) {
+      console.error('Product notify failed (non-fatal):', e);
     }
 
     return NextResponse.json({ message: 'Product updated successfully', product: updated });

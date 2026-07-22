@@ -7,8 +7,16 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     const doctorId = request.nextUrl.searchParams.get('doctorId');
-    const vendorId = request.nextUrl.searchParams.get('vendorId');
+    let vendorId = request.nextUrl.searchParams.get('vendorId');
     const userId = request.nextUrl.searchParams.get('userId');
+
+    // Vendor-scoped bank details require authenticated vendor JWT.
+    if (vendorId) {
+      const { requireVendorAuth, isAuthError } = await import('@/lib/vendorAuth');
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      vendorId = auth.vendorId;
+    }
 
     if (!userId && !doctorId && !vendorId) {
       return NextResponse.json(
@@ -66,7 +74,7 @@ export async function POST(request: NextRequest) {
     await connectDB();
 
     const body = await request.json();
-    const {
+    let {
       doctorId,
       vendorId,
       userId,
@@ -77,6 +85,13 @@ export async function POST(request: NextRequest) {
       upiId,
       preferredWithdrawalMethod,
     } = body;
+
+    if (vendorId) {
+      const { requireVendorAuth, isAuthError } = await import('@/lib/vendorAuth');
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      vendorId = auth.vendorId;
+    }
 
     if (!userId && !doctorId && !vendorId) {
       return NextResponse.json(
@@ -174,6 +189,16 @@ export async function PUT(request: NextRequest) {
         { error: 'Bank details not found' },
         { status: 404 }
       );
+    }
+
+    // Vendor-owned bank details require JWT ownership check.
+    if (bankDetails.vendorId) {
+      const { requireVendorAuth, isAuthError } = await import('@/lib/vendorAuth');
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      if (String(bankDetails.vendorId) !== String(auth.vendorId)) {
+        return NextResponse.json({ error: 'Not authorized to update these bank details' }, { status: 403 });
+      }
     }
 
     // Update fields

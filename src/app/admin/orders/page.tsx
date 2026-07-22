@@ -21,6 +21,8 @@ function normalizeAdminOrder(o: any): any {
           name: i?.productName || i?.name || 'Item',
           price: Number(i?.price || 0),
           quantity: Number(i?.quantity || 0),
+          vendorName: i?.vendorName || '',
+          vendorId: i?.vendorId || '',
         }))
       : [],
     totalAmount: total,
@@ -81,23 +83,23 @@ export default function AdminOrders() {
     try {
       // The database is the source of truth for ALL customer orders. localStorage
       // is per-browser, so it only ever held orders placed on this device.
-      const res = await fetch('/api/orders?admin=true', { cache: 'no-store' });
+      const res = await fetch('/api/orders?admin=true', {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}`,
+        },
+        cache: 'no-store',
+      });
       if (res.ok) {
         const data = await res.json();
         const list = Array.isArray(data?.orders) ? data.orders.map(normalizeAdminOrder) : [];
         setOrders(list);
       } else {
-        const ordersStr = localStorage.getItem('orders') || '[]';
-        setOrders(JSON.parse(ordersStr));
+        console.error('Admin orders fetch failed', res.status);
+        setOrders([]);
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
-      try {
-        const ordersStr = localStorage.getItem('orders') || '[]';
-        setOrders(JSON.parse(ordersStr));
-      } catch {
-        // ignore
-      }
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -132,8 +134,11 @@ export default function AdminOrders() {
       if (isDbOrder) {
         const res = await fetch('/api/orders', {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderId, status: newStatus }),
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}`,
+          },
+          body: JSON.stringify({ orderId, status: newStatus, userType: 'admin' }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {

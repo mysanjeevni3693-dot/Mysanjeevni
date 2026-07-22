@@ -75,39 +75,45 @@ export default function OrdersPage() {
   }, [router]);
 
   /**
-   * Loads orders from the database (source of truth) and merges any local-only
-   * orders (e.g. guest/offline records not yet in the DB). This ensures orders
-   * placed via the Shiprocket hosted checkout or on another device still show.
+   * Loads this user's orders from the database (source of truth).
+   * Admin sees all; vendors see their product lines via their dashboard.
    */
   const loadOrders = async (parsedUser: any) => {
-    // Local orders kept for backward compatibility / offline records.
-    const localAll: Order[] = JSON.parse(localStorage.getItem('orders') || '[]');
-    const localUserOrders = localAll.filter((o) => o.userId === parsedUser?.id);
-
-    let dbOrders: Order[] = [];
     try {
       const res = await fetch(`/api/orders?userId=${encodeURIComponent(parsedUser?.id || '')}`, {
         cache: 'no-store',
       });
-      if (res.ok) {
-        const data = await res.json();
-        dbOrders = Array.isArray(data?.orders) ? data.orders.map(normalizeDbOrder) : [];
+      if (!res.ok) {
+        setOrders([]);
+        return;
+      }
+      const data = await res.json();
+      const dbOrders: Order[] = Array.isArray(data?.orders)
+        ? data.orders.map(normalizeDbOrder)
+        : [];
+      dbOrders.sort(
+        (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+      );
+      setOrders(dbOrders);
+
+      // Keep a local cache mirror of DB orders for offline display only (not a second source of truth).
+      try {
+        localStorage.setItem(
+          'orders',
+          JSON.stringify(
+            dbOrders.map((o) => ({
+              ...o,
+              dbOrderId: o._id,
+              userId: parsedUser?.id,
+            }))
+          )
+        );
+      } catch {
+        // ignore quota
       }
     } catch {
-      // Network error – fall back to localStorage-only view below.
+      setOrders([]);
     }
-
-    // Merge: DB is authoritative; add local orders not already present in the DB.
-    const dbIds = new Set(dbOrders.map((o) => String(o._id)));
-    const localOnly = localUserOrders.filter((o) => {
-      const id = String(o.dbOrderId || o._id || o.id || o.orderId || '');
-      return id && !dbIds.has(id);
-    });
-
-    const merged = [...dbOrders, ...localOnly].sort(
-      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
-    );
-    setOrders(merged);
   };
 
   const getStatusColor = (status: string) => {
@@ -205,7 +211,11 @@ export default function OrdersPage() {
           await fetch('/api/orders', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ orderId: resolvedOrderId, status: 'cancelled' }),
+            body: JSON.stringify({
+              orderId: resolvedOrderId,
+              status: 'cancelled',
+              userId: String(user?.id || ''),
+            }),
           });
         } catch {
           // Ignore – local state is still updated below.

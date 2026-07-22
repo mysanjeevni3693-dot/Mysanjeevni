@@ -76,10 +76,68 @@ async function ensureDefaultCategoryTree() {
   }
 }
 
+/**
+ * Patch existing DB trees that were seeded before Organic Products existed under Nutrition.
+ * Idempotent — safe to run on every categories GET.
+ */
+async function ensureEssentialCategories() {
+  const productRoot =
+    (await CategoryNode.findOne({ name: 'Product Types', parentId: null })) ||
+    (await CategoryNode.findOne({ name: 'Product Type', parentId: null }));
+  if (!productRoot) return;
+
+  const nutritionType = await CategoryNode.findOne({
+    name: 'Nutrition',
+    parentId: productRoot._id,
+    isActive: { $ne: false },
+  });
+  if (!nutritionType) return;
+
+  let organicCategory = await CategoryNode.findOne({
+    name: 'Organic Products',
+    parentId: nutritionType._id,
+  });
+
+  if (!organicCategory) {
+    organicCategory = await CategoryNode.create({
+      name: 'Organic Products',
+      parentId: nutritionType._id,
+      sortOrder: 3,
+      isActive: true,
+    });
+  } else if (organicCategory.isActive === false) {
+    organicCategory.isActive = true;
+    await organicCategory.save();
+  }
+
+  const organicSubs =
+    FALLBACK_SUBCATEGORY_MAP_BY_TYPE.Nutrition?.['Organic Products'] ||
+    (['Organic Foods', 'Coffee & Tea', 'Ghee', 'Atta/Flour'] as const);
+
+  for (const subName of organicSubs) {
+    const existing = await CategoryNode.findOne({
+      name: subName,
+      parentId: organicCategory._id,
+    });
+    if (!existing) {
+      await CategoryNode.create({
+        name: subName,
+        parentId: organicCategory._id,
+        sortOrder: 0,
+        isActive: true,
+      });
+    } else if (existing.isActive === false) {
+      existing.isActive = true;
+      await existing.save();
+    }
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
     await ensureDefaultCategoryTree();
+    await ensureEssentialCategories();
 
     const mode = request.nextUrl.searchParams.get('mode');
     if (mode === 'config') {

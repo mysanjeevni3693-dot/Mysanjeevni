@@ -8,12 +8,19 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     const doctorId = request.nextUrl.searchParams.get('doctorId');
-    const vendorId = request.nextUrl.searchParams.get('vendorId');
+    let vendorId = request.nextUrl.searchParams.get('vendorId');
     const userId = request.nextUrl.searchParams.get('userId');
     const timeframe = request.nextUrl.searchParams.get('timeframe') || 'month'; // day, week, month, year
     const transactionType = request.nextUrl.searchParams.get('type'); // Optional: filter by type
     const page = parseInt(request.nextUrl.searchParams.get('page') || '1');
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '20');
+
+    if (vendorId) {
+      const { requireVendorAuth, isAuthError } = await import('@/lib/vendorAuth');
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      vendorId = auth.vendorId;
+    }
 
     if (!userId && !doctorId && !vendorId) {
       return NextResponse.json(

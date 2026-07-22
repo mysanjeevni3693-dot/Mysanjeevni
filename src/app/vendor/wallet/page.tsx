@@ -50,24 +50,33 @@ export default function VendorWallet() {
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [selectedTimeframe, setSelectedTimeframe] = useState('month');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'bank' | 'withdraw'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'settlements' | 'bank' | 'withdraw'>('overview');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawMethod, setWithdrawMethod] = useState('bank_transfer');
+  const [settlements, setSettlements] = useState<any[]>([]);
+  const [settlementSummary, setSettlementSummary] = useState<any>(null);
 
   useEffect(() => {
-    // Get vendor ID from localStorage
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      const user = JSON.parse(storedUser);
-      const id = user.vendorId || user.id;
-      setVendorId(id);
+    const token = localStorage.getItem('vendorToken');
+    const info = localStorage.getItem('vendorInfo');
+    if (!token || !info) {
+      router.push('/vendor/login');
+      return;
     }
-  }, []);
+    const vendor = JSON.parse(info);
+    const id = vendor._id || vendor.id;
+    if (!id) {
+      router.push('/vendor/login');
+      return;
+    }
+    setVendorId(String(id));
+  }, [router]);
 
   useEffect(() => {
     if (!vendorId) return;
     fetchWalletData();
     fetchEarnings();
+    fetchSettlements();
   }, [vendorId]);
 
   useEffect(() => {
@@ -75,15 +84,42 @@ export default function VendorWallet() {
     fetchTransactions();
   }, [vendorId, selectedTimeframe]);
 
+  const vendorAuthHeaders = (): HeadersInit => {
+    const token = localStorage.getItem('vendorToken') || '';
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const fetchSettlements = async () => {
+    try {
+      const res = await fetch('/api/vendor/settlements', {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettlements(data.settlements || []);
+        setSettlementSummary(data.summary || null);
+      }
+    } catch (error) {
+      console.error('Error fetching settlements:', error);
+    }
+  };
+
   const fetchWalletData = async () => {
     try {
-      const res = await fetch(`/api/wallet/balance?vendorId=${vendorId}`);
+      const res = await fetch(`/api/wallet/balance?vendorId=${vendorId}`, {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (data.wallet) {
         setWallet(data.wallet);
       }
       
-      const bankRes = await fetch(`/api/bank-details?vendorId=${vendorId}`);
+      const bankRes = await fetch(`/api/bank-details?vendorId=${vendorId}`, {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
       const bankData = await bankRes.json();
       if (bankData.bankDetails) {
         setBankDetails(bankData.bankDetails);
@@ -97,7 +133,10 @@ export default function VendorWallet() {
 
   const fetchEarnings = async () => {
     try {
-      const res = await fetch(`/api/wallet/earnings?vendorId=${vendorId}`);
+      const res = await fetch(`/api/wallet/earnings?vendorId=${vendorId}`, {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (data.summary) {
         setEarnings(data.summary);
@@ -109,7 +148,10 @@ export default function VendorWallet() {
 
   const fetchTransactions = async () => {
     try {
-      const res = await fetch(`/api/wallet/transactions?vendorId=${vendorId}&timeframe=${selectedTimeframe}`);
+      const res = await fetch(`/api/wallet/transactions?vendorId=${vendorId}&timeframe=${selectedTimeframe}`, {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (data.transactions) {
         setTransactions(data.transactions);
@@ -134,7 +176,10 @@ export default function VendorWallet() {
     try {
       const res = await fetch('/api/withdrawal/request', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...vendorAuthHeaders(),
+        },
         body: JSON.stringify({
           vendorId,
           amount: parseFloat(withdrawAmount),
@@ -223,6 +268,16 @@ export default function VendorWallet() {
               }`}
             >
               Transactions
+            </button>
+            <button
+              onClick={() => setActiveTab('settlements')}
+              className={`flex-1 min-w-30 py-4 px-6 font-semibold text-center transition ${
+                activeTab === 'settlements'
+                  ? 'border-b-2 border-green-600 text-green-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Settlements
             </button>
             <button
               onClick={() => setActiveTab('bank')}
@@ -339,6 +394,53 @@ export default function VendorWallet() {
                         <tr>
                           <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                             No transactions found for this period
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Settlements Tab */}
+            {activeTab === 'settlements' && (
+              <div>
+                <h3 className="text-xl font-bold text-gray-800 mb-2">Settlement History</h3>
+                <p className="text-sm text-gray-500 mb-6">
+                  Payouts recorded by MySanjeevni admin. Pending balance: ₹
+                  {Number(settlementSummary?.pendingSettlement ?? wallet?.balance ?? 0).toFixed(2)}
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Amount</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Method</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Transaction ID</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {settlements.length > 0 ? (
+                        settlements.map((s) => (
+                          <tr key={s._id} className="border-b border-gray-200 hover:bg-gray-50">
+                            <td className="px-4 py-3 font-semibold text-emerald-700">₹{Number(s.amount).toFixed(2)}</td>
+                            <td className="px-4 py-3 capitalize">{String(s.paymentMethod || '').replace('_', ' ')}</td>
+                            <td className="px-4 py-3 text-gray-600">{s.transactionId || s.referenceNumber || '—'}</td>
+                            <td className="px-4 py-3 capitalize">{s.status}</td>
+                            <td className="px-4 py-3 text-gray-500">
+                              {s.paidAt || s.createdAt
+                                ? new Date(s.paidAt || s.createdAt).toLocaleDateString('en-IN')
+                                : '—'}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                            No settlements received yet
                           </td>
                         </tr>
                       )}

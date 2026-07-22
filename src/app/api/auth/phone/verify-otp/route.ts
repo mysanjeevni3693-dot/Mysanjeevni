@@ -118,9 +118,9 @@ export async function POST(request: NextRequest) {
     otpRecord.consumed = true;
     await otpRecord.save();
 
-    const token = crypto.randomUUID();
-
     if (lookup?.role === 'vendor') {
+      const { issueVendorTokens } = await import('@/lib/vendorAuth');
+      const tokens = issueVendorTokens(lookup.account);
       return NextResponse.json(
         {
           message: 'Login successful',
@@ -133,13 +133,16 @@ export async function POST(request: NextRequest) {
             isVerified: lookup.account.status === 'verified',
             vendorStatus: lookup.account.status,
           },
-          token,
+          token: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: tokens.expiresIn,
         },
         { status: 200 }
       );
     }
 
     if (lookup) {
+      const token = crypto.randomUUID();
       return NextResponse.json(
         {
           message: 'Login successful',

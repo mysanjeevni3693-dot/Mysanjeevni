@@ -61,6 +61,16 @@ export async function POST(request: NextRequest) {
           { paymentStatus: 'completed', razorpayPaymentId: paymentId, status: 'confirmed' }
         ),
       ]);
+
+      try {
+        const paidOrders = await Order.find({ razorpayOrderId: orderId }).select('_id');
+        const { creditVendorsForOrder } = await import('@/lib/vendorEarnings');
+        for (const order of paidOrders) {
+          await creditVendorsForOrder(String(order._id));
+        }
+      } catch (earnErr) {
+        console.error('Razorpay webhook vendor credit failed (non-fatal):', earnErr);
+      }
     }
 
     if (eventType === 'payment.failed') {

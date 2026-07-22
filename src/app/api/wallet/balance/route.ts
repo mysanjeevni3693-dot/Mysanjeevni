@@ -11,7 +11,14 @@ export async function GET(request: NextRequest) {
 
     const userId = request.nextUrl.searchParams.get('userId');
     const doctorId = request.nextUrl.searchParams.get('doctorId');
-    const vendorId = request.nextUrl.searchParams.get('vendorId');
+    let vendorId = request.nextUrl.searchParams.get('vendorId');
+
+    if (vendorId) {
+      const { requireVendorAuth, isAuthError } = await import('@/lib/vendorAuth');
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      vendorId = auth.vendorId;
+    }
 
     if (!userId && !doctorId && !vendorId) {
       return NextResponse.json(

@@ -16,6 +16,15 @@ const orderSchema = new mongoose.Schema(
         total: Number,
         requiresPrescription: Boolean,
         prescriptionUrl: String,
+        // Multi-vendor: stamp the owning vendor so vendors only see their lines.
+        vendorId: String,
+        vendorName: String,
+        // Per-line fulfillment status (vendors update only their own items).
+        status: {
+          type: String,
+          enum: ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled'],
+          default: 'pending',
+        },
       },
     ],
     totalPrice: Number,

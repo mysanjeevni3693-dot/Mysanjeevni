@@ -6,6 +6,7 @@ import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import { useImageUpload } from '@/lib/hooks/useImageUpload';
 import RichTextEditor from '@/components/RichTextEditor';
+import VendorNotificationBell from '@/components/VendorNotificationBell';
 
 interface VendorInfo {
   _id: string;
@@ -15,6 +16,12 @@ interface VendorInfo {
   businessType?: string;
   description?: string;
   logo?: string;
+  banner?: string;
+  gstNumber?: string;
+  licenseNumber?: string;
+  registrationNumber?: string;
+  supportContact?: string;
+  rejectionReason?: string;
   address?: {
     street?: string;
     city?: string;
@@ -22,11 +29,85 @@ interface VendorInfo {
     pincode?: string;
     country?: string;
   };
+  pickupAddress?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country?: string;
+    phone?: string;
+  };
+  warehouseAddress?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country?: string;
+    phone?: string;
+  };
+  returnAddress?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country?: string;
+    phone?: string;
+  };
+  socialLinks?: {
+    website?: string;
+    facebook?: string;
+    instagram?: string;
+  };
   status: string;
   isActive?: boolean;
   rating?: number;
   totalOrders?: number;
   commissionPercentage?: number;
+}
+
+interface DashboardStats {
+  verificationStatus: string;
+  isActive: boolean;
+  rating: number;
+  commissionPercentage: number;
+  productCount: number;
+  activeProducts: number;
+  pendingApprovalProducts: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  lowStockProducts: Array<{ _id: string; name: string; stock: number }>;
+  outOfStockProducts: Array<{ _id: string; name: string; stock: number }>;
+  totalOrders: number;
+  totalSales: number;
+  totalRevenue: number;
+  estimatedCommission: number;
+  estimatedNetEarnings: number;
+  orderStatusCounts: Record<string, number>;
+  wallet: {
+    balance: number;
+    totalEarnings: number;
+    totalWithdrawn: number;
+    pendingSettlement: number;
+    paidSettlement: number;
+  };
+  monthlyEarnings: Array<{ month: string; sales: number; orders: number }>;
+  recentOrders: Array<{
+    _id: string;
+    status: string;
+    paymentStatus?: string;
+    createdAt?: string;
+    customerName: string;
+    vendorAmount: number;
+    itemCount: number;
+  }>;
+  recentReviews: Array<{
+    _id: string;
+    rating: number;
+    title: string;
+    comment: string;
+    userName: string;
+    createdAt?: string;
+  }>;
 }
 
 interface Product {
@@ -311,6 +392,26 @@ function buildProfileForm(vendor?: VendorInfo | null) {
     state: vendor?.address?.state || '',
     pincode: vendor?.address?.pincode || '',
     country: vendor?.address?.country || 'India',
+    gstNumber: vendor?.gstNumber || '',
+    licenseNumber: vendor?.licenseNumber || '',
+    registrationNumber: vendor?.registrationNumber || '',
+    supportContact: vendor?.supportContact || '',
+    website: vendor?.socialLinks?.website || '',
+    facebook: vendor?.socialLinks?.facebook || '',
+    instagram: vendor?.socialLinks?.instagram || '',
+    pickupStreet: vendor?.pickupAddress?.street || '',
+    pickupCity: vendor?.pickupAddress?.city || '',
+    pickupState: vendor?.pickupAddress?.state || '',
+    pickupPincode: vendor?.pickupAddress?.pincode || '',
+    pickupPhone: vendor?.pickupAddress?.phone || '',
+    warehouseStreet: vendor?.warehouseAddress?.street || '',
+    warehouseCity: vendor?.warehouseAddress?.city || '',
+    warehouseState: vendor?.warehouseAddress?.state || '',
+    warehousePincode: vendor?.warehouseAddress?.pincode || '',
+    returnStreet: vendor?.returnAddress?.street || '',
+    returnCity: vendor?.returnAddress?.city || '',
+    returnState: vendor?.returnAddress?.state || '',
+    returnPincode: vendor?.returnAddress?.pincode || '',
   };
 }
 
@@ -318,6 +419,8 @@ export default function VendorDashboard() {
   const router = useRouter();
   const [vendorInfo, setVendorInfo] = useState<VendorInfo | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
   const [categoryTree, setCategoryTree] = useState<any[]>([]);
@@ -551,13 +654,46 @@ export default function VendorDashboard() {
     }
 
     const vendorData = JSON.parse(info);
+    // Normalize id shape (login historically returned `id`, APIs return `_id`).
+    if (!vendorData._id && vendorData.id) vendorData._id = vendorData.id;
     setVendorInfo(vendorData);
     setProfileForm(buildProfileForm(vendorData));
     setProfileImageUrl(vendorData.logo || '');
-    fetchProducts(vendorData._id);
-    fetchVendorOrders(vendorData._id);
-    void fetchVendorProfile(vendorData._id);
+    fetchProducts();
+    fetchVendorOrders();
+    void fetchVendorProfile();
+    void fetchDashboardStats();
   }, [router]);
+
+  /** Authorization header from the vendor JWT issued at login. */
+  const vendorAuthHeaders = (extra: Record<string, string> = {}): HeadersInit => {
+    const token = localStorage.getItem('vendorToken') || '';
+    return {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...extra,
+    };
+  };
+
+  const fetchDashboardStats = async () => {
+    try {
+      setStatsLoading(true);
+      const response = await fetch('/api/vendor/dashboard/stats', {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
+      if (response.status === 401) {
+        router.push('/vendor/login');
+        return;
+      }
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.stats) setDashboardStats(data.stats);
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchCategoryConfig = async () => {
@@ -580,9 +716,16 @@ export default function VendorDashboard() {
     fetchCategoryConfig();
   }, []);
 
-  const fetchProducts = async (vendorId: string) => {
+  const fetchProducts = async () => {
     try {
-      const response = await fetch(`/api/vendor/products?vendorId=${vendorId}`);
+      const response = await fetch(`/api/vendor/products`, {
+        headers: vendorAuthHeaders(),
+        cache: 'no-store',
+      });
+      if (response.status === 401) {
+        router.push('/vendor/login');
+        return;
+      }
       if (!response.ok) throw new Error('Failed to fetch products');
       const data = await response.json();
       setProducts(data.products || []);
@@ -593,12 +736,17 @@ export default function VendorDashboard() {
     }
   };
 
-  const fetchVendorProfile = async (vendorId: string) => {
+  const fetchVendorProfile = async () => {
     try {
-      const response = await fetch(`/api/vendor/profile?vendorId=${vendorId}`, {
+      const response = await fetch(`/api/vendor/profile`, {
+        headers: vendorAuthHeaders(),
         cache: 'no-store',
       });
 
+      if (response.status === 401) {
+        router.push('/vendor/login');
+        return;
+      }
       if (!response.ok) return;
 
       const data = await response.json();
@@ -622,11 +770,8 @@ export default function VendorDashboard() {
     try {
       const response = await fetch('/api/vendor/profile', {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: vendorAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          vendorId: vendorInfo._id,
           isActive: !nextActiveState,
         }),
       });
@@ -668,6 +813,7 @@ export default function VendorDashboard() {
 
       const response = await fetch('/api/vendor/upload-profile-image', {
         method: 'POST',
+        headers: vendorAuthHeaders(),
         body: formData,
       });
 
@@ -712,9 +858,8 @@ export default function VendorDashboard() {
     try {
       const response = await fetch('/api/vendor/profile', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: vendorAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          vendorId: vendorInfo._id,
           vendorName: profileForm.vendorName,
           phone: profileForm.phone,
           businessType: profileForm.businessType,
@@ -725,6 +870,37 @@ export default function VendorDashboard() {
           state: profileForm.state,
           pincode: profileForm.pincode,
           country: profileForm.country,
+          gstNumber: profileForm.gstNumber,
+          licenseNumber: profileForm.licenseNumber,
+          registrationNumber: profileForm.registrationNumber,
+          supportContact: profileForm.supportContact,
+          socialLinks: {
+            website: profileForm.website,
+            facebook: profileForm.facebook,
+            instagram: profileForm.instagram,
+          },
+          pickupAddress: {
+            street: profileForm.pickupStreet,
+            city: profileForm.pickupCity,
+            state: profileForm.pickupState,
+            pincode: profileForm.pickupPincode,
+            phone: profileForm.pickupPhone,
+            country: profileForm.country || 'India',
+          },
+          warehouseAddress: {
+            street: profileForm.warehouseStreet,
+            city: profileForm.warehouseCity,
+            state: profileForm.warehouseState,
+            pincode: profileForm.warehousePincode,
+            country: profileForm.country || 'India',
+          },
+          returnAddress: {
+            street: profileForm.returnStreet,
+            city: profileForm.returnCity,
+            state: profileForm.returnState,
+            pincode: profileForm.returnPincode,
+            country: profileForm.country || 'India',
+          },
         }),
       });
 
@@ -746,21 +922,44 @@ export default function VendorDashboard() {
     }
   };
 
-  const fetchVendorOrders = (vendorId: string) => {
+  const fetchVendorOrders = async () => {
     try {
-      // Get all orders from localStorage
-      const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-      
-      // Filter orders that contain items from this vendor
-      const vendorOrdersList = allOrders.filter((order: any) => {
-        if (!order.items) return false;
-        // Check if any item in the order belongs to this vendor
-        return order.items.some((item: any) => 
-          item.vendorId === vendorId || item.vendorId === 'default-vendor'
-        );
+      const response = await fetch('/api/orders?vendorId=me', {
+        headers: vendorAuthHeaders({ 'x-vendor-scope': '1' }),
+        cache: 'no-store',
       });
-      
-      setVendorOrders(vendorOrdersList);
+      if (response.status === 401) {
+        router.push('/vendor/login');
+        return;
+      }
+      if (!response.ok) throw new Error('Failed to fetch orders');
+      const data = await response.json();
+      const list = Array.isArray(data?.orders) ? data.orders : [];
+      // Normalize for the existing orders UI (expects customerName / totalAmount).
+      setVendorOrders(
+        list.map((o: any) => ({
+          ...o,
+          customerName: o?.userId?.fullName || o?.customerName || 'Customer',
+          customerEmail: o?.userId?.email || o?.customerEmail || '',
+          customerPhone: o?.userId?.phone || o?.customerPhone || '',
+          totalAmount: Number(
+            o?.vendorAmount ??
+              (Array.isArray(o?.items)
+                ? o.items.reduce(
+                    (sum: number, i: any) =>
+                      sum + Number(i.total ?? Number(i.price || 0) * Number(i.quantity || 0)),
+                    0
+                  )
+                : o?.totalPrice ?? o?.totalAmount ?? 0)
+          ),
+          items: Array.isArray(o?.items)
+            ? o.items.map((i: any) => ({
+                ...i,
+                name: i?.productName || i?.name,
+              }))
+            : [],
+        }))
+      );
     } catch (err) {
       console.error('Error fetching vendor orders:', err);
       setVendorOrders([]);
@@ -788,7 +987,7 @@ export default function VendorDashboard() {
     }
   };
 
-  const updateOrderStatus = (orderId: string, newStatus: string) => {
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
     if (!vendorInfo?._id) return;
 
     const normalizedStatus = String(newStatus || 'pending').toLowerCase();
@@ -797,35 +996,27 @@ export default function VendorDashboard() {
     }
 
     try {
-      const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-      const updatedOrders = allOrders.map((order: any) => {
-        const currentOrderId = getOrderId(order);
-        if (currentOrderId !== orderId) return order;
-
-        const belongsToVendor = Array.isArray(order.items) && order.items.some((item: any) => {
-          const itemVendorId = String(item?.vendorId || '').trim();
-          return itemVendorId === vendorInfo._id || itemVendorId === 'default-vendor';
-        });
-
-        if (!belongsToVendor) return order;
-
-        return {
-          ...order,
+      const response = await fetch('/api/orders', {
+        method: 'PUT',
+        headers: vendorAuthHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          orderId,
           status: normalizedStatus,
-          updatedAt: new Date().toISOString(),
-        };
+          userType: 'vendor',
+        }),
       });
-
-      localStorage.setItem('orders', JSON.stringify(updatedOrders));
-      fetchVendorOrders(vendorInfo._id);
-
-      const updatedSelectedOrder = updatedOrders.find((order: any) => getOrderId(order) === orderId);
-      if (updatedSelectedOrder) {
-        setSelectedOrder(updatedSelectedOrder);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || 'Failed to update order status');
       }
-    } catch (err) {
+
+      await fetchVendorOrders();
+      if (selectedOrder && getOrderId(selectedOrder) === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: normalizedStatus });
+      }
+    } catch (err: any) {
       console.error('Error updating order status:', err);
-      alert('Failed to update order status. Please try again.');
+      alert(err?.message || 'Failed to update order status. Please try again.');
     }
   };
 
@@ -925,7 +1116,7 @@ export default function VendorDashboard() {
       setShowAddProduct(false);
       alert(createdData.message || 'Product submitted for admin approval');
       if (vendorInfo) {
-        fetchProducts(vendorInfo._id);
+        fetchProducts();
       }
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : 'Unknown error';
@@ -1083,7 +1274,7 @@ export default function VendorDashboard() {
       setEditImagePreviewUrl('');
 
       if (vendorInfo) {
-        fetchProducts(vendorInfo._id);
+        fetchProducts();
       }
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : 'Unknown error';
@@ -1116,7 +1307,7 @@ export default function VendorDashboard() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to delete product');
       if (vendorInfo) {
-        fetchProducts(vendorInfo._id);
+        fetchProducts();
       }
     } catch (err: unknown) {
       const error = err instanceof Error ? err.message : 'Unknown error';
@@ -1203,7 +1394,7 @@ export default function VendorDashboard() {
         setShowBulkUpload(false);
         setBulkFile(null);
         if (vendorInfo) {
-          fetchProducts(vendorInfo._id);
+          fetchProducts();
         }
       }
       // If there are failed uploads, leave modal open to show error details
@@ -1263,12 +1454,15 @@ export default function VendorDashboard() {
               </div>
             </div>
             <div className="flex flex-col items-end gap-3">
-              <button
-                onClick={handleLogout}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
-              >
-                Logout
-              </button>
+              <div className="flex items-center gap-2">
+                <VendorNotificationBell />
+                <button
+                  onClick={handleLogout}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
+                >
+                  Logout
+                </button>
+              </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <Link
                   href="/profile"
@@ -1287,6 +1481,18 @@ export default function VendorDashboard() {
                   className="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
                 >
                   My Wallet
+                </Link>
+                <Link
+                  href="/vendor/dashboard/returns"
+                  className="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                >
+                  Returns
+                </Link>
+                <Link
+                  href="/vendor/dashboard/reports"
+                  className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                >
+                  Reports
                 </Link>
                 <button
                   type="button"
@@ -1380,6 +1586,26 @@ export default function VendorDashboard() {
                       <h3 className="text-lg font-bold text-gray-900">{vendorInfo.vendorName}</h3>
                       <p className="text-sm text-gray-600">{vendorInfo.email}</p>
                     </div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-500">Verification</p>
+                    <p className="font-medium text-gray-900 capitalize">{vendorInfo.status}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-500">GST Number</p>
+                    <p className="font-medium text-gray-900">{vendorInfo.gstNumber || 'Not provided'}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-500">Drug License</p>
+                    <p className="font-medium text-gray-900">{vendorInfo.licenseNumber || 'Not provided'}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-gray-500">Support Contact</p>
+                    <p className="font-medium text-gray-900">{vendorInfo.supportContact || vendorInfo.phone || 'Not provided'}</p>
                   </div>
 
                   <div>
@@ -1522,10 +1748,89 @@ export default function VendorDashboard() {
                       name="description"
                       value={profileForm.description}
                       onChange={handleProfileFieldChange}
-                      placeholder="Business description"
+                      placeholder="Business / shop description"
                       rows={4}
                       className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-2"
                     />
+
+                    <p className="md:col-span-2 text-sm font-bold text-slate-800 pt-2 border-t">Business documents</p>
+                    <input
+                      type="text"
+                      name="gstNumber"
+                      value={profileForm.gstNumber}
+                      onChange={handleProfileFieldChange}
+                      placeholder="GST Number (optional)"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    />
+                    <input
+                      type="text"
+                      name="licenseNumber"
+                      value={profileForm.licenseNumber}
+                      onChange={handleProfileFieldChange}
+                      placeholder="Drug License Number"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    />
+                    <input
+                      type="text"
+                      name="registrationNumber"
+                      value={profileForm.registrationNumber}
+                      onChange={handleProfileFieldChange}
+                      placeholder="Business Registration Number"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    />
+                    <input
+                      type="text"
+                      name="supportContact"
+                      value={profileForm.supportContact}
+                      onChange={handleProfileFieldChange}
+                      placeholder="Customer Support Contact"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    />
+
+                    <p className="md:col-span-2 text-sm font-bold text-slate-800 pt-2 border-t">Social links</p>
+                    <input
+                      type="url"
+                      name="website"
+                      value={profileForm.website}
+                      onChange={handleProfileFieldChange}
+                      placeholder="Website URL"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm md:col-span-2"
+                    />
+                    <input
+                      type="url"
+                      name="facebook"
+                      value={profileForm.facebook}
+                      onChange={handleProfileFieldChange}
+                      placeholder="Facebook URL"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    />
+                    <input
+                      type="url"
+                      name="instagram"
+                      value={profileForm.instagram}
+                      onChange={handleProfileFieldChange}
+                      placeholder="Instagram URL"
+                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm"
+                    />
+
+                    <p className="md:col-span-2 text-sm font-bold text-slate-800 pt-2 border-t">Pickup address</p>
+                    <input type="text" name="pickupStreet" value={profileForm.pickupStreet} onChange={handleProfileFieldChange} placeholder="Pickup street" className="border border-slate-300 rounded-lg px-4 py-2 md:col-span-2" />
+                    <input type="text" name="pickupCity" value={profileForm.pickupCity} onChange={handleProfileFieldChange} placeholder="Pickup city" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="pickupState" value={profileForm.pickupState} onChange={handleProfileFieldChange} placeholder="Pickup state" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="pickupPincode" value={profileForm.pickupPincode} onChange={handleProfileFieldChange} placeholder="Pickup pincode" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="pickupPhone" value={profileForm.pickupPhone} onChange={handleProfileFieldChange} placeholder="Pickup phone" className="border border-slate-300 rounded-lg px-4 py-2" />
+
+                    <p className="md:col-span-2 text-sm font-bold text-slate-800 pt-2 border-t">Warehouse address</p>
+                    <input type="text" name="warehouseStreet" value={profileForm.warehouseStreet} onChange={handleProfileFieldChange} placeholder="Warehouse street" className="border border-slate-300 rounded-lg px-4 py-2 md:col-span-2" />
+                    <input type="text" name="warehouseCity" value={profileForm.warehouseCity} onChange={handleProfileFieldChange} placeholder="Warehouse city" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="warehouseState" value={profileForm.warehouseState} onChange={handleProfileFieldChange} placeholder="Warehouse state" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="warehousePincode" value={profileForm.warehousePincode} onChange={handleProfileFieldChange} placeholder="Warehouse pincode" className="border border-slate-300 rounded-lg px-4 py-2" />
+
+                    <p className="md:col-span-2 text-sm font-bold text-slate-800 pt-2 border-t">Return address</p>
+                    <input type="text" name="returnStreet" value={profileForm.returnStreet} onChange={handleProfileFieldChange} placeholder="Return street" className="border border-slate-300 rounded-lg px-4 py-2 md:col-span-2" />
+                    <input type="text" name="returnCity" value={profileForm.returnCity} onChange={handleProfileFieldChange} placeholder="Return city" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="returnState" value={profileForm.returnState} onChange={handleProfileFieldChange} placeholder="Return state" className="border border-slate-300 rounded-lg px-4 py-2" />
+                    <input type="text" name="returnPincode" value={profileForm.returnPincode} onChange={handleProfileFieldChange} placeholder="Return pincode" className="border border-slate-300 rounded-lg px-4 py-2" />
                   </div>
 
                   <div className="flex flex-wrap gap-3">
@@ -1562,27 +1867,135 @@ export default function VendorDashboard() {
 
         {/* Overview Tab */}
         {tab === 'overview' && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-gray-500 text-sm font-semibold">Total Products</h3>
-              <p className="text-3xl font-bold text-emerald-600 mt-2">{products.length}</p>
+          <div className="space-y-6">
+            {/* Verification banner */}
+            <div
+              className={`rounded-xl border px-4 py-3 text-sm ${
+                vendorInfo.status === 'verified'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : vendorInfo.status === 'pending'
+                    ? 'border-orange-200 bg-orange-50 text-orange-800'
+                    : vendorInfo.status === 'suspended'
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : 'border-slate-200 bg-slate-50 text-slate-700'
+              }`}
+            >
+              <span className="font-semibold">Verification status: </span>
+              <span className="capitalize">{vendorInfo.status}</span>
+              {vendorInfo.status === 'rejected' && vendorInfo.rejectionReason && (
+                <span> — {vendorInfo.rejectionReason}</span>
+              )}
+              {vendorInfo.status === 'verified' && (
+                <span> · Storefront {vendorInfo.isActive === false ? 'hidden' : 'visible'}</span>
+              )}
             </div>
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-gray-500 text-sm font-semibold">Total Orders</h3>
-              <p className="text-3xl font-bold text-blue-600 mt-2">
-                {vendorInfo.totalOrders || 0}
-              </p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-gray-500 text-sm font-semibold">Rating</h3>
-              <p className="text-3xl font-bold text-yellow-600 mt-2">
-                ⭐ {vendorInfo.rating || 'N/A'}
-              </p>
-            </div>
-            <div className="bg-white p-6 rounded-lg shadow-md">
-              <h3 className="text-gray-500 text-sm font-semibold">Commission</h3>
-              <p className="text-3xl font-bold text-purple-600 mt-2">{vendorInfo.commissionPercentage || 10}%</p>
-            </div>
+
+            {statsLoading && !dashboardStats ? (
+              <p className="text-slate-500 text-center py-8">Loading dashboard metrics…</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-4 gap-4">
+                  {[
+                    { label: 'Total Revenue', value: `₹${(dashboardStats?.totalRevenue || 0).toLocaleString('en-IN')}`, color: 'text-emerald-600' },
+                    { label: 'Total Sales', value: dashboardStats?.totalSales ?? 0, color: 'text-blue-600' },
+                    { label: 'Total Orders', value: dashboardStats?.totalOrders ?? 0, color: 'text-indigo-600' },
+                    { label: 'Wallet Balance', value: `₹${(dashboardStats?.wallet?.balance || 0).toLocaleString('en-IN')}`, color: 'text-purple-600' },
+                    { label: 'Pending Orders', value: dashboardStats?.orderStatusCounts?.pending ?? 0, color: 'text-orange-600' },
+                    { label: 'Processing', value: dashboardStats?.orderStatusCounts?.confirmed ?? 0, color: 'text-sky-600' },
+                    { label: 'Shipped', value: dashboardStats?.orderStatusCounts?.shipped ?? 0, color: 'text-violet-600' },
+                    { label: 'Delivered', value: dashboardStats?.orderStatusCounts?.delivered ?? 0, color: 'text-teal-600' },
+                    { label: 'Cancelled', value: dashboardStats?.orderStatusCounts?.cancelled ?? 0, color: 'text-red-600' },
+                    { label: 'Products', value: dashboardStats?.productCount ?? products.length, color: 'text-emerald-700' },
+                    { label: 'Low Stock', value: dashboardStats?.lowStockCount ?? 0, color: 'text-amber-600' },
+                    { label: 'Out of Stock', value: dashboardStats?.outOfStockCount ?? 0, color: 'text-rose-600' },
+                    { label: 'Pending Settlement', value: `₹${(dashboardStats?.wallet?.pendingSettlement || 0).toLocaleString('en-IN')}`, color: 'text-orange-700' },
+                    { label: 'Paid Settlement', value: `₹${(dashboardStats?.wallet?.paidSettlement || 0).toLocaleString('en-IN')}`, color: 'text-emerald-700' },
+                    { label: 'Est. Net Earnings', value: `₹${(dashboardStats?.estimatedNetEarnings || 0).toLocaleString('en-IN')}`, color: 'text-blue-700' },
+                    { label: 'Rating', value: `⭐ ${dashboardStats?.rating || vendorInfo.rating || 'N/A'}`, color: 'text-yellow-600' },
+                  ].map((card) => (
+                    <div key={card.label} className="bg-white p-4 rounded-lg shadow-md border border-slate-100">
+                      <h3 className="text-gray-500 text-xs font-semibold uppercase tracking-wide">{card.label}</h3>
+                      <p className={`text-2xl font-bold mt-2 ${card.color}`}>{card.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-lg shadow-md border border-slate-100 p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-slate-900">Recent Orders</h3>
+                      <button type="button" onClick={() => setTab('orders')} className="text-sm text-emerald-600 font-semibold">
+                        View all
+                      </button>
+                    </div>
+                    {(dashboardStats?.recentOrders || []).length === 0 ? (
+                      <p className="text-sm text-slate-500 py-6 text-center">No orders yet</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {dashboardStats!.recentOrders.map((o) => (
+                          <div key={o._id} className="flex items-center justify-between border-b border-slate-100 pb-2 text-sm">
+                            <div>
+                              <p className="font-semibold text-slate-900">#{o._id.slice(-8).toUpperCase()}</p>
+                              <p className="text-slate-500">{o.customerName} · {o.itemCount} item(s)</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-emerald-600">₹{Number(o.vendorAmount || 0).toFixed(0)}</p>
+                              <p className="capitalize text-xs text-slate-500">{o.status}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-white rounded-lg shadow-md border border-slate-100 p-5">
+                    <h3 className="font-bold text-slate-900 mb-4">Latest Reviews</h3>
+                    {(dashboardStats?.recentReviews || []).length === 0 ? (
+                      <p className="text-sm text-slate-500 py-6 text-center">No reviews yet</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {dashboardStats!.recentReviews.map((r) => (
+                          <div key={r._id} className="border-b border-slate-100 pb-2 text-sm">
+                            <p className="font-semibold text-slate-900">
+                              {'★'.repeat(Math.min(5, Number(r.rating) || 0))}{' '}
+                              <span className="text-slate-600 font-normal">{r.userName}</span>
+                            </p>
+                            <p className="text-slate-700 mt-1">{r.title || r.comment || '—'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {((dashboardStats?.lowStockProducts?.length || 0) > 0 ||
+                  (dashboardStats?.outOfStockProducts?.length || 0) > 0) && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+                    <p className="font-semibold text-amber-900 mb-2">Inventory alerts</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-amber-800 font-medium">Low stock</p>
+                        <ul className="mt-1 space-y-1 text-amber-900">
+                          {(dashboardStats?.lowStockProducts || []).map((p) => (
+                            <li key={p._id}>
+                              {p.name} — {p.stock} left
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <p className="text-rose-800 font-medium">Out of stock</p>
+                        <ul className="mt-1 space-y-1 text-rose-900">
+                          {(dashboardStats?.outOfStockProducts || []).map((p) => (
+                            <li key={p._id}>{p.name}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -1733,7 +2146,12 @@ export default function VendorDashboard() {
                       let currentLevelName: string | null = productTypeName;
 
                       for (let i = 0; i < 10; i++) {
-                        const options = getNodeChildren(currentLevelName, categoryTree);
+                        let options = getNodeChildren(currentLevelName, categoryTree);
+                        // Level 0: always merge essential categories (e.g. Organic Products under Nutrition)
+                        if (i === 0) {
+                          const fallback = activeVendorCategoryMap[productTypeName] || [];
+                          options = Array.from(new Set([...(options || []), ...fallback]));
+                        }
                         if (!options || options.length === 0) break;
                         hierarchyLevels.push(options);
 
@@ -2147,7 +2565,11 @@ export default function VendorDashboard() {
                           }
                         }
 
-                        const options = getNodeChildren(currentLevelName, categoryTree);
+                        let options = getNodeChildren(currentLevelName, categoryTree);
+                        if (i === 0) {
+                          const fallback = activeVendorCategoryMap[productTypeName] || [];
+                          options = Array.from(new Set([...(options || []), ...fallback]));
+                        }
                         if (!options || options.length === 0) break;
                         hierarchyLevels.push(options);
 
@@ -2658,8 +3080,59 @@ export default function VendorDashboard() {
 
         {/* Analytics Tab */}
         {tab === 'analytics' && (
-          <div className="bg-white p-6 rounded-lg shadow-md">
-            <p className="text-gray-500 text-center">Analytics feature coming soon</p>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white p-5 rounded-lg shadow-md border border-slate-100">
+                <p className="text-xs uppercase text-slate-500 font-semibold">Gross Revenue</p>
+                <p className="text-2xl font-bold text-emerald-600 mt-1">
+                  ₹{(dashboardStats?.totalRevenue || 0).toLocaleString('en-IN')}
+                </p>
+              </div>
+              <div className="bg-white p-5 rounded-lg shadow-md border border-slate-100">
+                <p className="text-xs uppercase text-slate-500 font-semibold">Platform Commission ({dashboardStats?.commissionPercentage ?? 10}%)</p>
+                <p className="text-2xl font-bold text-orange-600 mt-1">
+                  ₹{(dashboardStats?.estimatedCommission || 0).toLocaleString('en-IN')}
+                </p>
+              </div>
+              <div className="bg-white p-5 rounded-lg shadow-md border border-slate-100">
+                <p className="text-xs uppercase text-slate-500 font-semibold">Est. Net Earnings</p>
+                <p className="text-2xl font-bold text-blue-600 mt-1">
+                  ₹{(dashboardStats?.estimatedNetEarnings || 0).toLocaleString('en-IN')}
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-md border border-slate-100">
+              <h3 className="font-bold text-slate-900 mb-4">Monthly Earnings (last 6 months)</h3>
+              {(dashboardStats?.monthlyEarnings || []).length === 0 ? (
+                <p className="text-slate-500 text-center py-8">No sales data yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {(() => {
+                    const maxSales = Math.max(
+                      ...(dashboardStats?.monthlyEarnings || []).map((m) => m.sales),
+                      1
+                    );
+                    return (dashboardStats?.monthlyEarnings || []).map((m) => (
+                      <div key={m.month} className="flex items-center gap-3 text-sm">
+                        <span className="w-20 text-slate-600 font-medium">{m.month}</span>
+                        <div className="flex-1 h-8 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 rounded-full flex items-center justify-end pr-2"
+                            style={{ width: `${Math.max((m.sales / maxSales) * 100, m.sales > 0 ? 8 : 0)}%` }}
+                          >
+                            {m.sales > 0 && (
+                              <span className="text-xs font-semibold text-white">₹{m.sales.toLocaleString('en-IN')}</span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="w-16 text-right text-slate-500">{m.orders} ord</span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

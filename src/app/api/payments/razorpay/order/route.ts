@@ -58,10 +58,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create order in database
+    // Create order in database with vendor stamps so marketplace scoping works.
+    const { stampVendorOnOrderItems } = await import('@/lib/orderItemVendors');
+    const stampedItems = await stampVendorOnOrderItems(items, { defaultStatus: 'pending' });
+
     const order = await Order.create({
       userId,
-      items,
+      items: stampedItems,
       totalPrice,
       deliveryAddress,
       status: 'pending',

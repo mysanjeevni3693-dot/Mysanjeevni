@@ -39,6 +39,7 @@ function toOrderStatus(status: ShipmentStatus): string | undefined {
     case 'DELIVERED':
       return 'delivered';
     case 'CANCELLED':
+    case 'RTO':
       return 'cancelled';
     default:
       return undefined;
@@ -83,7 +84,43 @@ export async function POST(request: NextRequest) {
     const orderStatus = toOrderStatus(event.currentStatus);
     if (orderStatus) update.status = orderStatus;
 
+    const matchedOrders = await Order.find(query).select('_id status items');
     const result = await Order.updateMany(query, { $set: update });
+
+    // Credit / reverse vendor wallets when delivery status crosses money thresholds.
+    if (orderStatus === 'delivered' || orderStatus === 'cancelled') {
+      try {
+        const { creditVendorsForOrder, reverseVendorCreditsForOrder } = await import(
+          '@/lib/vendorEarnings'
+        );
+        const { notifyVendors } = await import('@/lib/vendorNotifications');
+
+        for (const order of matchedOrders) {
+          const orderId = String(order._id);
+          if (orderStatus === 'delivered') {
+            await creditVendorsForOrder(orderId);
+          } else {
+            await reverseVendorCreditsForOrder(orderId, 'shipment_cancelled');
+            const vendorIds = [
+              ...new Set(
+                (order.items || [])
+                  .map((i: any) => String(i.vendorId || ''))
+                  .filter((id: string) => Boolean(id))
+              ),
+            ] as string[];
+            await notifyVendors(vendorIds, {
+              type: 'order_cancelled',
+              title: 'Order cancelled',
+              message: `Order #${orderId.slice(-8).toUpperCase()} was cancelled/RTO`,
+              relatedId: orderId,
+              actionUrl: '/vendor/dashboard',
+            });
+          }
+        }
+      } catch (earnErr) {
+        console.error('Delivery webhook vendor earnings failed (non-fatal):', earnErr);
+      }
+    }
 
     return ok({ received: true, updated: (result?.modifiedCount ?? 0) > 0 });
   } catch (error) {

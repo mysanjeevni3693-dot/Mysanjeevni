@@ -79,6 +79,8 @@ export default function AdminSidebar() {
     { label: 'Consultations', href: '/admin/consultations', icon: Icons.consultations },
     { label: 'Analytics', href: '/admin/analytics', icon: Icons.analytics },
     { label: 'Orders', href: '/admin/orders', icon: Icons.orders },
+    { label: 'Settlements', href: '/admin/settlements', icon: Icons.analytics },
+    { label: 'Wallet Mgmt', href: '/admin/wallet-management', icon: Icons.analytics },
     { label: 'Shipments', href: '/admin/shipments', icon: Icons.orders },
     { label: 'Lab Bookings', href: '/admin/lab-bookings', icon: Icons.orders },
     { label: 'Webhook Events', href: '/admin/thyrocare-webhooks', icon: Icons.reports },

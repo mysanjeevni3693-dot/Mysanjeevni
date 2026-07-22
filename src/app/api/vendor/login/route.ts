@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { connectDB } from '@/lib/db';
 import { Vendor } from '@/lib/models/Vendor';
+import { issueVendorTokens } from '@/lib/vendorAuth';
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,21 +65,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Real JWT — APIs verify this and bind vendorId from the token (not the client).
+    const tokens = issueVendorTokens(vendor);
+
     const vendorResponse = {
+      // Both shapes for backward compatibility with dashboard (expects _id).
+      _id: vendor._id,
       id: vendor._id,
       vendorName: vendor.vendorName,
       email: vendor.email,
+      phone: vendor.phone,
       businessType: vendor.businessType,
       status: vendor.status,
       rating: vendor.rating,
       totalOrders: vendor.totalOrders,
+      revenue: vendor.revenue,
+      commissionPercentage: vendor.commissionPercentage,
+      logo: vendor.logo,
+      isActive: vendor.isActive,
     };
 
     return NextResponse.json(
       {
         message: 'Login successful',
         vendor: vendorResponse,
-        token: crypto.randomUUID(),
+        token: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
       },
       { status: 200 }
     );

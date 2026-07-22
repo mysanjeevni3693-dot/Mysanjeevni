@@ -1230,6 +1230,21 @@ export default function AdminMedicines() {
                     
                     // Build hierarchy levels
                     for (let i = 0; i < 10; i++) {
+                      // Level 0: categories under the selected product type — prefer config map
+                      // so essential categories like "Organic Products" always appear.
+                      if (i === 0) {
+                        const fromConfig = activeVendorCategoryMap[productTypeName] || [];
+                        const fromTree = getNodeChildren(productTypeName);
+                        const options = Array.from(new Set([...fromConfig, ...fromTree]));
+                        if (!options.length) break;
+                        hierarchyLevels.push(options);
+                        if (prodForm.categoryPath.length > 0) {
+                          currentLevelName = prodForm.categoryPath[0];
+                          continue;
+                        }
+                        break;
+                      }
+
                       // For level 1 (subcategories/brands), ALWAYS use getSubcategoryOptionsForType
                       // to ensure correct product type's subcategories are returned
                       if (i === 1 && prodForm.categoryPath[0]) {

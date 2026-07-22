@@ -10,6 +10,11 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+/**
+ * Hard-delete is reserved for explicit admin "delete" only.
+ * Approve / reject / suspend / reactivate are soft status transitions so
+ * historical orders, KYC docs, and products are preserved.
+ */
 const deleteVendorAndAssets = async (vendorId: string) => {
   const vendor = await Vendor.findById(vendorId);
 
@@ -50,7 +55,7 @@ const deleteVendorAndAssets = async (vendorId: string) => {
   };
 };
 
-// GET pending vendors
+// GET vendors by status
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
@@ -76,7 +81,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Approve or reject vendor
+// POST - Approve or reject vendor (soft reject — keeps the record)
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
@@ -102,11 +107,36 @@ export async function POST(request: NextRequest) {
       const updatedVendor = await Vendor.findByIdAndUpdate(
         vendorId,
         {
-        status: 'verified',
-        verifiedAt: new Date(),
+          status: 'verified',
+          verifiedAt: new Date(),
+          rejectionReason: '',
+          isActive: true,
         },
         { new: true }
       ).select('-password');
+
+      if (!updatedVendor) {
+        return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
+      }
+
+      // Activate previously submitted products that were waiting on verification.
+      await Product.updateMany(
+        { vendorId, approvalStatus: 'approved' },
+        { $set: { isActive: true } }
+      );
+
+      try {
+        const { notifyVendor } = await import('@/lib/vendorNotifications');
+        await notifyVendor({
+          vendorId: String(vendorId),
+          type: 'profile_verification',
+          title: 'Account verified',
+          message: 'Your vendor account has been approved. You can now list products.',
+          actionUrl: '/vendor/dashboard',
+        });
+      } catch {
+        // non-fatal
+      }
 
       return NextResponse.json(
         {
@@ -117,20 +147,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const deletedVendorResult = await deleteVendorAndAssets(vendorId);
-
-    if (!deletedVendorResult) {
+    // Soft reject — do NOT delete vendor or products.
+    if (!rejectionReason || !String(rejectionReason).trim()) {
       return NextResponse.json(
-        { error: 'Vendor not found' },
-        { status: 404 }
+        { error: 'Rejection reason is required' },
+        { status: 400 }
       );
+    }
+
+    const updatedVendor = await Vendor.findByIdAndUpdate(
+      vendorId,
+      {
+        status: 'rejected',
+        rejectionReason: String(rejectionReason).trim(),
+        isActive: false,
+        updatedAt: new Date(),
+      },
+      { new: true }
+    ).select('-password');
+
+    if (!updatedVendor) {
+      return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
+    }
+
+    // Hide storefront products while rejected (can be restored on re-approve).
+    await Product.updateMany({ vendorId }, { $set: { isActive: false } });
+
+    try {
+      const { notifyVendor } = await import('@/lib/vendorNotifications');
+      await notifyVendor({
+        vendorId: String(vendorId),
+        type: 'profile_verification',
+        title: 'Account rejected',
+        message: String(rejectionReason).trim().slice(0, 200),
+        actionUrl: '/vendor/dashboard',
+      });
+    } catch {
+      // non-fatal
     }
 
     return NextResponse.json(
       {
-        message: 'Vendor rejected successfully',
-        vendor: deletedVendorResult.vendor,
-        deletedProductsCount: deletedVendorResult.deletedProductsCount,
+        message: 'Vendor rejected (account retained for records)',
+        vendor: updatedVendor,
       },
       { status: 200 }
     );
@@ -143,13 +202,13 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT - Suspend or reactivate vendor
+// PUT - Suspend, reactivate, deactivate, or hard-delete vendor
 export async function PUT(request: NextRequest) {
   try {
     await connectDB();
 
     const body = await request.json();
-    const { vendorId, action } = body;
+    const { vendorId, action, reason } = body;
 
     if (!vendorId || !action) {
       return NextResponse.json(
@@ -166,26 +225,72 @@ export async function PUT(request: NextRequest) {
     }
 
     if (action === 'suspend') {
-      const deletedVendorResult = await deleteVendorAndAssets(vendorId);
+      const updatedVendor = await Vendor.findByIdAndUpdate(
+        vendorId,
+        {
+          status: 'suspended',
+          isActive: false,
+          rejectionReason: reason ? String(reason).trim() : undefined,
+          updatedAt: new Date(),
+        },
+        { new: true }
+      ).select('-password');
 
-      if (!deletedVendorResult) {
-        return NextResponse.json(
-          { error: 'Vendor not found' },
-          { status: 404 }
-        );
+      if (!updatedVendor) {
+        return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
+      }
+
+      await Product.updateMany({ vendorId }, { $set: { isActive: false } });
+
+      try {
+        const { notifyVendor } = await import('@/lib/vendorNotifications');
+        await notifyVendor({
+          vendorId: String(vendorId),
+          type: 'profile_verification',
+          title: 'Account suspended',
+          message: reason ? String(reason).trim().slice(0, 200) : 'Your vendor account has been suspended',
+          actionUrl: '/vendor/dashboard',
+        });
+      } catch {
+        // non-fatal
       }
 
       return NextResponse.json(
         {
           message: 'Vendor suspended successfully',
-          vendor: deletedVendorResult.vendor,
-          deletedProductsCount: deletedVendorResult.deletedProductsCount,
+          vendor: updatedVendor,
         },
         { status: 200 }
       );
     }
 
-    if (action === 'deactivate' || action === 'delete') {
+    if (action === 'deactivate') {
+      const updatedVendor = await Vendor.findByIdAndUpdate(
+        vendorId,
+        {
+          isActive: false,
+          updatedAt: new Date(),
+        },
+        { new: true }
+      ).select('-password');
+
+      if (!updatedVendor) {
+        return NextResponse.json({ error: 'Vendor not found' }, { status: 404 });
+      }
+
+      await Product.updateMany({ vendorId }, { $set: { isActive: false } });
+
+      return NextResponse.json(
+        {
+          message: 'Vendor deactivated successfully',
+          vendor: updatedVendor,
+        },
+        { status: 200 }
+      );
+    }
+
+    if (action === 'delete') {
+      // Explicit hard-delete only — irreversible.
       const deletedVendorResult = await deleteVendorAndAssets(vendorId);
 
       if (!deletedVendorResult) {
@@ -197,7 +302,7 @@ export async function PUT(request: NextRequest) {
 
       return NextResponse.json(
         {
-          message: `Vendor ${action}d successfully`,
+          message: 'Vendor permanently deleted',
           vendor: deletedVendorResult.vendor,
           deletedProductsCount: deletedVendorResult.deletedProductsCount,
         },
@@ -205,11 +310,15 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // reactivate
     const updatedVendor = await Vendor.findByIdAndUpdate(
       vendorId,
       {
         status: 'verified',
         isActive: true,
+        rejectionReason: '',
+        verifiedAt: new Date(),
+        updatedAt: new Date(),
       },
       { new: true }
     ).select('-password');
@@ -219,6 +328,24 @@ export async function PUT(request: NextRequest) {
         { error: 'Vendor not found' },
         { status: 404 }
       );
+    }
+
+    await Product.updateMany(
+      { vendorId, approvalStatus: 'approved' },
+      { $set: { isActive: true } }
+    );
+
+    try {
+      const { notifyVendor } = await import('@/lib/vendorNotifications');
+      await notifyVendor({
+        vendorId: String(vendorId),
+        type: 'profile_verification',
+        title: 'Account reactivated',
+        message: 'Your vendor account is active again',
+        actionUrl: '/vendor/dashboard',
+      });
+    } catch {
+      // non-fatal
     }
 
     return NextResponse.json(

@@ -58,11 +58,19 @@ export async function persistCheckoutOrder(
   await connectDB();
 
   // Idempotency: update if we have already recorded this checkout order.
-  const existing = await Order.findOne({ checkoutOrderId: order.orderId });
+    const existing = await Order.findOne({ checkoutOrderId: order.orderId });
   if (existing) {
     existing.paymentStatus = mapCheckoutPaymentStatus(order.paymentStatus);
     existing.status = existing.paymentStatus === 'completed' ? 'confirmed' : existing.status;
     await existing.save();
+    if (existing.paymentStatus === 'completed') {
+      try {
+        const { creditVendorsForOrder } = await import('@/lib/vendorEarnings');
+        await creditVendorsForOrder(String(existing._id));
+      } catch {
+        // non-fatal
+      }
+    }
     return { persisted: true, updated: true, orderId: String(existing._id) };
   }
 
@@ -111,16 +119,20 @@ export async function persistCheckoutOrder(
     country: ship?.country || 'India',
   });
 
-  // Enrich line items with product name/price from our catalog when possible.
+  // Enrich line items with product name/price/vendor from our catalog when possible.
   const items = await Promise.all(
     order.items.map(async (item) => {
       let name = `Item ${item.variantId}`;
       let price = 0;
+      let vendorId = '';
+      let vendorName = '';
       try {
-        const product = await Product.findById(item.variantId).select('name price');
+        const product = await Product.findById(item.variantId).select('name price vendorId vendorName');
         if (product) {
           name = product.name || name;
           price = Number(product.price ?? 0) || 0;
+          vendorId = product.vendorId ? String(product.vendorId) : '';
+          vendorName = product.vendorName || '';
         }
       } catch {
         // Non-fatal: keep placeholder values.
@@ -131,6 +143,9 @@ export async function persistCheckoutOrder(
         quantity: item.quantity,
         price,
         total: price * item.quantity,
+        vendorId,
+        vendorName,
+        status: mapCheckoutPaymentStatus(order.paymentStatus) === 'completed' ? 'confirmed' : 'pending',
       };
     })
   );
@@ -148,6 +163,33 @@ export async function persistCheckoutOrder(
     checkoutSource: order.source || 'shiprocket-checkout',
     estimatedDelivery: order.estimatedDelivery,
   });
+
+  // Notify vendors of the new SRC order (best-effort).
+  try {
+    const { notifyVendors } = await import('@/lib/vendorNotifications');
+    const vendorIds = [
+      ...new Set(items.map((i) => String(i.vendorId || '')).filter(Boolean)),
+    ];
+    await notifyVendors(vendorIds, {
+      type: 'new_order',
+      title: 'New order received',
+      message: `Order #${String(created._id).slice(-8).toUpperCase()} via Fast Checkout`,
+      relatedId: String(created._id),
+      actionUrl: '/vendor/dashboard',
+    });
+  } catch (notifyErr) {
+    console.error('SRC vendor new-order notify failed (non-fatal):', notifyErr);
+  }
+
+  // Credit vendor wallets when SRC payment is already completed.
+  if (mapCheckoutPaymentStatus(order.paymentStatus) === 'completed') {
+    try {
+      const { creditVendorsForOrder } = await import('@/lib/vendorEarnings');
+      await creditVendorsForOrder(String(created._id));
+    } catch (earnErr) {
+      console.error('SRC vendor earnings credit failed (non-fatal):', earnErr);
+    }
+  }
 
   return { persisted: true, updated: false, orderId: String(created._id) };
 }

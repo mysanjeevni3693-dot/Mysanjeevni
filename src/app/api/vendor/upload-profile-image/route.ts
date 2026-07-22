@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadImageBufferToCloudinary } from '@/lib/cloudinaryUtils';
+import { requireVendorAuth, isAuthError } from '@/lib/vendorAuth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireVendorAuth(request);
+    if (isAuthError(auth)) return auth;
+
     const formData = await request.formData();
     const image = formData.get('image');
 

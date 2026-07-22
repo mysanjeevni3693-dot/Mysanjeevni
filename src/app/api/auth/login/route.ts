@@ -60,6 +60,13 @@ export async function POST(request: NextRequest) {
         }
 
         const tokenPayload = generateAdminToken(adminEmail);
+        const { registerAdminToken } = await import('@/lib/auth/adminAuth');
+        registerAdminToken(
+          tokenPayload.token,
+          tokenPayload.email,
+          tokenPayload.expiresAt,
+          tokenPayload.createdAt
+        );
 
         clearTimeout(timeoutId);
         return NextResponse.json(
@@ -118,7 +125,8 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const token = crypto.randomUUID();
+        const { issueVendorTokens } = await import('@/lib/vendorAuth');
+        const tokens = issueVendorTokens(vendor);
 
         clearTimeout(timeoutId);
         return NextResponse.json(
@@ -133,7 +141,9 @@ export async function POST(request: NextRequest) {
               isVerified: vendor.status === 'verified',
               vendorStatus: vendor.status,
             },
-            token,
+            token: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresIn: tokens.expiresIn,
           },
           { status: 200 }
         );

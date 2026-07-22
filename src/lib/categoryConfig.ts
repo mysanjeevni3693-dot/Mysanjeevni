@@ -135,6 +135,56 @@ function buildFromNodes(nodes: NodeDoc[]): CategoryConfig {
   };
 }
 
+function uniquePreserveOrder(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = String(value || '').trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/** Union fallback + DB category lists so essential categories (e.g. Organic Products) are never dropped. */
+function mergeVendorCategoryMaps(
+  fallback: Record<string, readonly string[]>,
+  dynamic: Record<string, string[]>
+): Record<string, string[]> {
+  const keys = uniquePreserveOrder([...Object.keys(fallback), ...Object.keys(dynamic)]);
+  const merged: Record<string, string[]> = {};
+  for (const key of keys) {
+    merged[key] = uniquePreserveOrder([
+      ...(fallback[key] || []),
+      ...(dynamic[key] || []),
+    ]);
+  }
+  return merged;
+}
+
+function mergeSubcategoryMaps(
+  fallback: Record<string, Record<string, readonly string[]>>,
+  dynamic: Record<string, Record<string, string[]>>
+): Record<string, Record<string, string[]>> {
+  const typeKeys = uniquePreserveOrder([...Object.keys(fallback), ...Object.keys(dynamic)]);
+  const merged: Record<string, Record<string, string[]>> = {};
+  for (const typeKey of typeKeys) {
+    const fb = fallback[typeKey] || {};
+    const dyn = dynamic[typeKey] || {};
+    const categoryKeys = uniquePreserveOrder([...Object.keys(fb), ...Object.keys(dyn)]);
+    const subMap: Record<string, string[]> = {};
+    for (const categoryKey of categoryKeys) {
+      subMap[categoryKey] = uniquePreserveOrder([
+        ...((fb as any)[categoryKey] || []),
+        ...(dyn[categoryKey] || []),
+      ]);
+    }
+    merged[typeKey] = subMap;
+  }
+  return merged;
+}
+
 export async function getCategoryConfig(): Promise<CategoryConfig> {
   const raw = await CategoryNode.find({}).lean();
   const docs = normalizeDocs(raw);
@@ -146,16 +196,10 @@ export async function getCategoryConfig(): Promise<CategoryConfig> {
 
   return {
     vendorCategoryMap: hasDynamicVendorMap
-      ? ({
-          ...FALLBACK_VENDOR_CATEGORY_MAP,
-          ...dynamic.vendorCategoryMap,
-        } as unknown as Record<string, string[]>)
+      ? mergeVendorCategoryMaps(FALLBACK_VENDOR_CATEGORY_MAP as any, dynamic.vendorCategoryMap)
       : ({ ...FALLBACK_VENDOR_CATEGORY_MAP } as unknown as Record<string, string[]>),
     subcategoryMapByType: hasDynamicSubcategoryMap
-      ? ({
-          ...FALLBACK_SUBCATEGORY_MAP_BY_TYPE,
-          ...dynamic.subcategoryMapByType,
-        } as unknown as Record<string, Record<string, string[]>>)
+      ? mergeSubcategoryMaps(FALLBACK_SUBCATEGORY_MAP_BY_TYPE as any, dynamic.subcategoryMapByType)
       : ({ ...FALLBACK_SUBCATEGORY_MAP_BY_TYPE } as unknown as Record<string, Record<string, string[]>>),
     diseaseSubcategoryMap: hasDynamicDiseaseMap
       ? dynamic.diseaseSubcategoryMap

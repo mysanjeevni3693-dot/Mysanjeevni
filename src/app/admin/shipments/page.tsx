@@ -63,7 +63,12 @@ export default function AdminShipments() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await fetch('/api/orders?admin=true', { cache: 'no-store' });
+      const res = await fetch('/api/orders?admin=true', {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('adminToken') || ''}`,
+        },
+        cache: 'no-store',
+      });
       const data = await res.json();
       setOrders(Array.isArray(data?.orders) ? data.orders : []);
     } catch {

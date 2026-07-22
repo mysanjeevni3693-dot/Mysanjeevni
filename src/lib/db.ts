@@ -6,6 +6,20 @@ import { Order } from './models/Order';
 import { Product } from './models/Product';
 import { Vendor } from './models/Vendor';
 import { LabTestBooking } from './models/LabTestBooking';
+import { Settlement } from './models/Settlement';
+import { Wallet } from './models/Wallet';
+import { Transaction } from './models/Transaction';
+import { ReturnRequest } from './models/ReturnRequest';
+import { VendorNotification } from './models/VendorNotification';
+import { Commission } from './models/Commission';
+
+// Ensure models are referenced so tree-shaking doesn't drop them.
+void Settlement;
+void Wallet;
+void Transaction;
+void ReturnRequest;
+void VendorNotification;
+void Commission;
 
 const MONGODB_URI = process.env.MONGODB_URI;
 

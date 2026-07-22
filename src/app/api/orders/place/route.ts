@@ -26,6 +26,7 @@ import { connectDB } from '@/lib/db';
 import { Order } from '@/lib/models/Order';
 import { Address } from '@/lib/models/Address';
 import { User } from '@/lib/models/User';
+import { Product } from '@/lib/models/Product';
 import { hasShiprocketCredentials } from '@/lib/shiprocket/config';
 import { createShiprocketOrder } from '@/lib/shiprocket/order';
 import { assignAwb } from '@/lib/shiprocket/shipment';
@@ -156,23 +157,45 @@ export async function POST(request: NextRequest) {
       country: input.deliveryAddress.country,
     });
 
+    // Resolve owning vendor for each line item (multi-vendor safe).
+    const productIds = input.items.map((i) => i.productId).filter(Boolean);
+    const products = productIds.length
+      ? await Product.find({ _id: { $in: productIds } }).select('_id vendorId vendorName')
+      : [];
+    const productVendorMap = new Map(
+      products.map((p: any) => [
+        String(p._id),
+        { vendorId: p.vendorId ? String(p.vendorId) : '', vendorName: p.vendorName || '' },
+      ])
+    );
+
     // Persist the order (source of truth).
     const order = (await Order.create({
       userId: input.userId,
-      items: input.items.map((item) => ({
-        productId: item.productId,
-        productName: item.productName,
-        quantity: item.quantity,
-        price: item.price,
-        total: item.price * item.quantity,
-        requiresPrescription: item.requiresPrescription,
-        prescriptionUrl: item.prescriptionUrl,
-      })),
+      items: input.items.map((item) => {
+        const owner = productVendorMap.get(String(item.productId || '')) || {
+          vendorId: '',
+          vendorName: '',
+        };
+        return {
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          price: item.price,
+          total: item.price * item.quantity,
+          requiresPrescription: item.requiresPrescription,
+          prescriptionUrl: item.prescriptionUrl,
+          vendorId: owner.vendorId,
+          vendorName: owner.vendorName,
+          status: input.paymentStatus === 'completed' ? 'confirmed' : 'pending',
+        };
+      }),
       totalPrice: input.totalAmount,
       shippingCharge: input.deliveryCharge,
       deliveryAddress: address._id,
       status: input.paymentStatus === 'completed' ? 'confirmed' : 'pending',
       paymentStatus: input.paymentStatus,
+      paymentMethod: input.paymentMethod,
       razorpayOrderId: input.razorpayOrderId,
       razorpayPaymentId: input.razorpayPaymentId,
       orderNotes: input.orderNotes,
@@ -192,6 +215,37 @@ export async function POST(request: NextRequest) {
 
     if (shouldShip) {
       await runShiprocketPipeline(order);
+    }
+
+    // Notify vendors of the new order (best-effort).
+    try {
+      const { notifyVendors } = await import('@/lib/vendorNotifications');
+      const vendorIds = [
+        ...new Set(
+          (order.items || [])
+            .map((i: any) => String(i.vendorId || ''))
+            .filter(Boolean)
+        ),
+      ];
+      await notifyVendors(vendorIds, {
+        type: 'new_order',
+        title: 'New order received',
+        message: `Order #${String(order._id).slice(-8).toUpperCase()} — ${order.items?.length || 0} item(s)`,
+        relatedId: String(order._id),
+        actionUrl: '/vendor/dashboard',
+      });
+    } catch (notifyErr) {
+      console.error('Vendor new-order notify failed (non-fatal):', notifyErr);
+    }
+
+    // Credit vendor wallets for prepaid / completed payments (idempotent).
+    if (input.paymentStatus === 'completed') {
+      try {
+        const { creditVendorsForOrder } = await import('@/lib/vendorEarnings');
+        await creditVendorsForOrder(String(order._id));
+      } catch (earnErr) {
+        console.error('Vendor earnings credit failed (non-fatal):', earnErr);
+      }
     }
 
     return ok(

@@ -4,6 +4,7 @@ import { connectDB } from '@/lib/db';
 import { LabTestBooking } from '@/lib/models/LabTestBooking';
 import { Product } from '@/lib/models/Product';
 import { User } from '@/lib/models/User';
+import { requireVendorAuth, isAuthError } from '@/lib/vendorAuth';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'MySanjeevni-secret-key-2024';
 
@@ -24,12 +25,10 @@ function getUserId(req: Request): string | null {
   }
 }
 
-function getVendorId(req: Request): string {
-  const fromHeader = req.headers.get('x-vendor-id')?.trim();
-  if (fromHeader) return fromHeader;
-
-  const { searchParams } = new URL(req.url);
-  return String(searchParams.get('vendorId') || '').trim();
+function requireVendorScope(req: Request): { vendorId: string } | NextResponse {
+  const auth = requireVendorAuth(req as any);
+  if (isAuthError(auth)) return auth;
+  return { vendorId: auth.vendorId };
 }
 
 function normalizeStatus(value: string) {
@@ -67,10 +66,9 @@ export async function GET(req: Request) {
     if (scope === 'all') {
       // Admin scope: all bookings.
     } else if (scope === 'vendor') {
-      const vendorId = getVendorId(req);
-      if (!vendorId) {
-        return NextResponse.json({ error: 'Vendor ID is required' }, { status: 400 });
-      }
+      const scoped = requireVendorScope(req);
+      if (scoped instanceof NextResponse) return scoped;
+      const vendorId = scoped.vendorId;
 
       const vendorProductIds = await getVendorLabProductIds(vendorId);
       if (vendorProductIds.length === 0) {
@@ -151,10 +149,9 @@ export async function PATCH(req: Request) {
     }
 
     if (scope === 'vendor') {
-      const vendorId = getVendorId(req);
-      if (!vendorId) {
-        return NextResponse.json({ error: 'Vendor ID is required' }, { status: 400 });
-      }
+      const scoped = requireVendorScope(req);
+      if (scoped instanceof NextResponse) return scoped;
+      const vendorId = scoped.vendorId;
 
       const vendorProductIds = await getVendorLabProductIds(vendorId);
       const canAccess = vendorProductIds.includes(String(booking.testId)) && booking.provider === 'local';

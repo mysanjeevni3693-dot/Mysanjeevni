@@ -80,6 +80,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    try {
+      const { creditVendorsForOrder } = await import('@/lib/vendorEarnings');
+      await creditVendorsForOrder(String(order._id));
+    } catch (earnErr) {
+      console.error('Razorpay verify vendor credit failed (non-fatal):', earnErr);
+    }
+
     return NextResponse.json(
       {
         success: true,

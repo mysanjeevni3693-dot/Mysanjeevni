@@ -89,6 +89,13 @@ export async function POST(request: NextRequest) {
     // Admin fallback (admin account from env without DB user record)
     if (email && process.env.ADMIN_EMAIL && email === process.env.ADMIN_EMAIL.toLowerCase()) {
       const tokenPayload = generateAdminToken(process.env.ADMIN_EMAIL);
+      const { registerAdminToken } = await import('@/lib/auth/adminAuth');
+      registerAdminToken(
+        tokenPayload.token,
+        tokenPayload.email,
+        tokenPayload.expiresAt,
+        tokenPayload.createdAt
+      );
       return NextResponse.json(
         {
           message: 'Admin social login successful',
@@ -136,11 +143,14 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const vendorToken = crypto.randomUUID();
+        const { issueVendorTokens } = await import('@/lib/vendorAuth');
+        const tokens = issueVendorTokens(vendor);
         return NextResponse.json(
           {
             message: 'Vendor social login successful',
-            token: vendorToken,
+            token: tokens.accessToken,
+            refreshToken: tokens.refreshToken,
+            expiresIn: tokens.expiresIn,
             user: {
               id: vendor._id,
               email: vendor.email,

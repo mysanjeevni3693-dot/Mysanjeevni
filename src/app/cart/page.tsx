@@ -401,16 +401,15 @@ export default function CartPage() {
 
               const prescriptions = getAllPrescriptions();
 
-              // Persist to DB (dual-write). International (PayPal) orders skip the
-              // India-only Shiprocket pipeline server-side but are still stored.
+              // Persist to DB — required for Admin / Vendor / User order views.
               const dbResult = await persistOrderToDatabase({
                 paymentMethod: 'paypal',
                 paymentStatus: 'completed',
               });
 
               const order = {
-                _id: dbResult?.orderId || Math.random().toString(36).substr(2, 9),
-                dbOrderId: dbResult?.orderId,
+                _id: dbResult.orderId,
+                dbOrderId: dbResult.orderId,
                 userId: user?.id || 'guest',
                 customerName: address.fullName,
                 customerEmail: user?.email || 'not-provided',
@@ -431,9 +430,9 @@ export default function CartPage() {
                 deliveryAddress: address,
                 status: 'confirmed',
                 paymentStatus: 'completed',
-                awbNumber: dbResult?.awbNumber || '',
-                courierName: dbResult?.courierName || '',
-                shipmentStatus: dbResult?.shipmentStatus || '',
+                awbNumber: dbResult.awbNumber || '',
+                courierName: dbResult.courierName || '',
+                shipmentStatus: dbResult.shipmentStatus || '',
                 createdAt: new Date().toISOString(),
               };
 
@@ -562,49 +561,51 @@ export default function CartPage() {
 
     // COD should not go through online payment gateway.
     if (selectedPaymentMethod === 'cod') {
-      const prescriptions = getAllPrescriptions();
+      try {
+        const prescriptions = getAllPrescriptions();
+        const dbResult = await persistOrderToDatabase({ paymentMethod: 'cod', paymentStatus: 'pending' });
 
-      // Persist to DB + auto-run Shiprocket pipeline (dual-write; best-effort).
-      const dbResult = await persistOrderToDatabase({ paymentMethod: 'cod', paymentStatus: 'pending' });
+        const order = {
+          _id: dbResult.orderId,
+          dbOrderId: dbResult.orderId,
+          userId: user?.id || 'guest',
+          customerName: address.fullName,
+          customerEmail: user?.email || 'not-provided',
+          customerPhone: address.phoneNumber,
+          items: cartItems.filter((item) => item).map((item) => ({
+            ...item,
+            vendorId: item.vendorId || 'default-vendor',
+            prescriptionUrl: item.requiresPrescription ? prescriptions[String(item.productId || item.id)] : undefined,
+          })),
+          totalAmount,
+          subtotal: finalPrice,
+          discount,
+          deliveryCharge,
+          paymentMethod: 'cod',
+          paymentGateway: 'cod',
+          deliveryAddress: address,
+          status: 'pending',
+          paymentStatus: 'pending',
+          awbNumber: dbResult.awbNumber || '',
+          courierName: dbResult.courierName || '',
+          shipmentStatus: dbResult.shipmentStatus || '',
+          createdAt: new Date().toISOString(),
+        };
 
-      const order = {
-        _id: dbResult?.orderId || Math.random().toString(36).substr(2, 9),
-        dbOrderId: dbResult?.orderId,
-        userId: user?.id || 'guest',
-        customerName: address.fullName,
-        customerEmail: user?.email || 'not-provided',
-        customerPhone: address.phoneNumber,
-        items: cartItems.filter((item) => item).map((item) => ({
-          ...item,
-          vendorId: item.vendorId || 'default-vendor',
-          prescriptionUrl: item.requiresPrescription ? prescriptions[String(item.productId || item.id)] : undefined,
-        })),
-        totalAmount,
-        subtotal: finalPrice,
-        discount,
-        deliveryCharge,
-        paymentMethod: 'cod',
-        paymentGateway: 'cod',
-        deliveryAddress: address,
-        status: 'pending',
-        paymentStatus: 'pending',
-        awbNumber: dbResult?.awbNumber || '',
-        courierName: dbResult?.courierName || '',
-        shipmentStatus: dbResult?.shipmentStatus || '',
-        createdAt: new Date().toISOString(),
-      };
+        const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+        orders.push(order);
+        localStorage.setItem('orders', JSON.stringify(orders));
 
-      const orders = JSON.parse(localStorage.getItem('orders') || '[]');
-      orders.push(order);
-      localStorage.setItem('orders', JSON.stringify(orders));
+        setCartItems([]);
+        localStorage.setItem('cart', JSON.stringify([]));
+        setShowPaymentModal(false);
+        setSelectedPaymentMethod('');
 
-      setCartItems([]);
-      localStorage.setItem('cart', JSON.stringify([]));
-      setShowPaymentModal(false);
-      setSelectedPaymentMethod('');
-
-      alert(`Order placed with Cash on Delivery!\n\nOrder ID: ${order._id}`);
-      router.push('/orders');
+        alert(`Order placed with Cash on Delivery!\n\nOrder ID: ${order._id}`);
+        router.push('/orders');
+      } catch (error: any) {
+        alert(error?.message || 'Failed to place order. Please try again.');
+      }
       return;
     }
 
@@ -705,7 +706,7 @@ export default function CartPage() {
 
             const prescriptions = getAllPrescriptions();
 
-            // Persist to DB + auto-run Shiprocket pipeline (dual-write; best-effort).
+            // Persist to DB — required for Admin / Vendor / User order views.
             const dbResult = await persistOrderToDatabase({
               paymentMethod: `razorpay-${selectedPaymentMethod}`,
               paymentStatus: 'completed',
@@ -714,8 +715,8 @@ export default function CartPage() {
             });
 
             const order = {
-              _id: dbResult?.orderId || Math.random().toString(36).substr(2, 9),
-              dbOrderId: dbResult?.orderId,
+              _id: dbResult.orderId,
+              dbOrderId: dbResult.orderId,
               userId: user?.id || 'guest',
               customerName: address.fullName,
               customerEmail: user?.email || 'not-provided',
@@ -736,9 +737,9 @@ export default function CartPage() {
               deliveryAddress: address,
               status: 'confirmed',
               paymentStatus: 'completed',
-              awbNumber: dbResult?.awbNumber || '',
-              courierName: dbResult?.courierName || '',
-              shipmentStatus: dbResult?.shipmentStatus || '',
+              awbNumber: dbResult.awbNumber || '',
+              courierName: dbResult.courierName || '',
+              shipmentStatus: dbResult.shipmentStatus || '',
               createdAt: new Date().toISOString(),
             };
 
@@ -853,13 +854,8 @@ export default function CartPage() {
   };
 
   /**
-   * Persists the order to the database and triggers the automatic Shiprocket
-   * fulfilment pipeline (create order -> AWB -> pickup) on the server. This runs
-   * alongside the existing localStorage write (dual-write) so all current order
-   * screens keep working while the DB becomes the source of truth for shipping.
-   *
-   * Returns the DB/shipment identifiers on success, or null if persistence was
-   * skipped/failed (in which case the purchase still completes via localStorage).
+   * Persists the order to the database (source of truth for Admin / Vendor / User views).
+   * Throws on failure so checkout does not pretend the order was placed.
    */
   const persistOrderToDatabase = async (payment: {
     paymentMethod: string;
@@ -873,54 +869,53 @@ export default function CartPage() {
     courierName: string;
     shipmentStatus: string;
     pickupStatus: string;
-  } | null> => {
-    try {
-      if (!user?.id) return null;
-
-      const prescriptions = getAllPrescriptions();
-      const payload = {
-        userId: user.id,
-        items: cartItems
-          .filter((item) => item)
-          .map((item) => ({
-            productId: String(item.productId || item.id),
-            productName: item.productName || item.name || 'Product',
-            quantity: item.quantity || 1,
-            price: effectivePrice(item),
-            requiresPrescription: item.requiresPrescription || false,
-            prescriptionUrl: item.requiresPrescription
-              ? prescriptions[String(item.productId || item.id)]
-              : undefined,
-          })),
-        deliveryAddress: {
-          fullName: address.fullName,
-          phone: address.phoneNumber,
-          addressLine1: [address.houseNo, address.streetAddress].filter(Boolean).join(', '),
-          addressLine2: '',
-          city: address.city,
-          state: address.state,
-          pincode: address.postalCode,
-          country: address.country,
-        },
-        subtotal: finalPrice,
-        discount,
-        deliveryCharge,
-        totalAmount,
-        ...payment,
-      };
-
-      const res = await fetch('/api/orders/place', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.success) return null;
-      return data.data;
-    } catch {
-      // Never block the purchase on DB/shipping persistence.
-      return null;
+  }> => {
+    if (!user?.id) {
+      throw new Error('Please login to place an order');
     }
+
+    const prescriptions = getAllPrescriptions();
+    const payload = {
+      userId: user.id,
+      items: cartItems
+        .filter((item) => item)
+        .map((item) => ({
+          productId: String(item.productId || item.id),
+          productName: item.productName || item.name || 'Product',
+          quantity: item.quantity || 1,
+          price: effectivePrice(item),
+          requiresPrescription: item.requiresPrescription || false,
+          prescriptionUrl: item.requiresPrescription
+            ? prescriptions[String(item.productId || item.id)]
+            : undefined,
+        })),
+      deliveryAddress: {
+        fullName: address.fullName,
+        phone: address.phoneNumber,
+        addressLine1: [address.houseNo, address.streetAddress].filter(Boolean).join(', '),
+        addressLine2: '',
+        city: address.city,
+        state: address.state,
+        pincode: address.postalCode,
+        country: address.country,
+      },
+      subtotal: finalPrice,
+      discount,
+      deliveryCharge,
+      totalAmount,
+      ...payment,
+    };
+
+    const res = await fetch('/api/orders/place', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok || !data?.success || !data?.data?.orderId) {
+      throw new Error(data?.error?.message || data?.error || 'Failed to save order. Please try again.');
+    }
+    return data.data;
   };
 
   /**
@@ -952,10 +947,19 @@ export default function CartPage() {
       // email inside the hosted checkout.
       const customAttributes = user?.id ? { user_id: String(user.id) } : undefined;
 
+      // Pass our cart-level discount to Shiprocket so the hosted checkout shows
+      // the same after-discount price as our own summary. Shipping is handled by
+      // Shiprocket's own checkout configuration (SR Checkout dashboard).
+      const coupon = discount > 0 ? { code: 'MYSANJEEVNI10', amount: discount } : undefined;
+
       const res = await fetch('/api/shiprocket/checkout/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items, ...(customAttributes ? { customAttributes } : {}) }),
+        body: JSON.stringify({
+          items,
+          ...(coupon ? { coupon } : {}),
+          ...(customAttributes ? { customAttributes } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data?.success || !data?.data?.token) {

@@ -21,7 +21,7 @@ const transactionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['earning', 'withdrawal', 'commission_deduction', 'refund', 'bonus', 'admin_adjustment'],
+      enum: ['earning', 'withdrawal', 'commission_deduction', 'refund', 'bonus', 'admin_adjustment', 'settlement'],
       required: true,
     },
     amount: {
@@ -41,7 +41,7 @@ const transactionSchema = new mongoose.Schema(
     },
     relatedType: {
       type: String,
-      enum: ['consultation', 'order', 'withdrawal', 'lab_booking', 'other'],
+      enum: ['consultation', 'order', 'withdrawal', 'lab_booking', 'settlement', 'other'],
       description: 'Type of related entity',
     },
     metadata: {

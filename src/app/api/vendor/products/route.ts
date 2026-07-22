@@ -3,6 +3,7 @@ import { connectDB } from '@/lib/db';
 import { Product } from '@/lib/models/Product';
 import { generateProductId } from '@/lib/utils/productIdGenerator';
 import { Vendor } from '@/lib/models/Vendor';
+import { requireVendorAuth, isAuthError } from '@/lib/vendorAuth';
 
 const VENDOR_CATEGORY_MAP = {
   'Generic Medicine': [
@@ -173,18 +174,15 @@ function resolveTypeAndCategory(productType: string | undefined, category: strin
 // GET vendor products
 export async function GET(request: NextRequest) {
   try {
+    const auth = requireVendorAuth(request);
+    if (isAuthError(auth)) return auth;
+
     await connectDB();
 
-    const vendorId = request.nextUrl.searchParams.get('vendorId');
-
-    if (!vendorId) {
-      return NextResponse.json(
-        { error: 'Vendor ID required' },
-        { status: 400 }
-      );
-    }
-
-    const products = await Product.find({ vendorId }).populate('vendorId', 'vendorName rating');
+    const products = await Product.find({ vendorId: auth.vendorId }).populate(
+      'vendorId',
+      'vendorName rating'
+    );
 
     return NextResponse.json(
       {
@@ -205,11 +203,14 @@ export async function GET(request: NextRequest) {
 // POST - Add product
 export async function POST(request: NextRequest) {
   try {
+    const auth = requireVendorAuth(request);
+    if (isAuthError(auth)) return auth;
+
     await connectDB();
 
     const body = await request.json();
+    const vendorId = auth.vendorId;
     const {
-      vendorId,
       name,
       description,
       shortDescription,
@@ -226,7 +227,7 @@ export async function POST(request: NextRequest) {
       ...otherFields
     } = body;
 
-    if (!vendorId || !name || !price || !category || usdPrice === undefined || usdPrice === null || isNaN(parseFloat(String(usdPrice)))) {
+    if (!name || !price || !category || usdPrice === undefined || usdPrice === null || isNaN(parseFloat(String(usdPrice)))) {
       return NextResponse.json(
         { error: 'Missing or invalid required fields' },
         { status: 400 }
@@ -353,14 +354,18 @@ export async function POST(request: NextRequest) {
 // PUT - Update product
 export async function PUT(request: NextRequest) {
   try {
+    const auth = requireVendorAuth(request);
+    if (isAuthError(auth)) return auth;
+
     await connectDB();
 
     const body = await request.json();
-    const { productId, vendorId, safetyInformation, specifications, shortDescription, ...updateData } = body;
+    const vendorId = auth.vendorId;
+    const { productId, safetyInformation, specifications, shortDescription, ...updateData } = body;
 
-    if (!productId || !vendorId) {
+    if (!productId) {
       return NextResponse.json(
-        { error: 'Product ID and Vendor ID required' },
+        { error: 'Product ID required' },
         { status: 400 }
       );
     }
@@ -472,6 +477,22 @@ export async function PUT(request: NextRequest) {
       { new: true, runValidators: true }
     );
 
+    try {
+      if (updatedProduct && updateData.stock !== undefined) {
+        const { maybeNotifyStock } = await import('@/lib/vendorNotifications');
+        const payload =
+          typeof updatedProduct.toObject === 'function'
+            ? updatedProduct.toObject()
+            : updatedProduct;
+        await maybeNotifyStock({
+          ...payload,
+          vendorId: auth.vendorId,
+        });
+      }
+    } catch {
+      // non-fatal
+    }
+
     return NextResponse.json(
       {
         message: 'Product updated and submitted for admin approval',
@@ -491,15 +512,18 @@ export async function PUT(request: NextRequest) {
 // DELETE - Remove product
 export async function DELETE(request: NextRequest) {
   try {
+    const auth = requireVendorAuth(request);
+    if (isAuthError(auth)) return auth;
+
     await connectDB();
 
     const { searchParams } = new URL(request.url);
     const productId = searchParams.get('productId');
-    const vendorId = searchParams.get('vendorId');
+    const vendorId = auth.vendorId;
 
-    if (!productId || !vendorId) {
+    if (!productId) {
       return NextResponse.json(
-        { error: 'Product ID and Vendor ID required' },
+        { error: 'Product ID required' },
         { status: 400 }
       );
     }

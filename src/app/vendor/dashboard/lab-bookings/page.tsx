@@ -31,20 +31,25 @@ export default function VendorLabBookingsPage() {
   const [status, setStatus] = useState<(typeof STATUS_OPTIONS)[number]>('all');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchBookings = async (currentVendorId: string) => {
+  const fetchBookings = async (_currentVendorId?: string) => {
     try {
       setLoading(true);
+      const token = localStorage.getItem('vendorToken') || '';
       const q = new URLSearchParams();
       q.set('scope', 'vendor');
-      q.set('vendorId', currentVendorId);
       if (status !== 'all') q.set('status', status);
       if (search.trim()) q.set('search', search.trim());
 
       const res = await fetch(`/api/lab-test-bookings/history?${q.toString()}`, {
         headers: {
-          'x-vendor-id': currentVendorId,
+          Authorization: `Bearer ${token}`,
         },
+        cache: 'no-store',
       });
+      if (res.status === 401) {
+        router.push('/vendor/login');
+        return;
+      }
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Failed to fetch bookings');
@@ -75,7 +80,7 @@ export default function VendorLabBookingsPage() {
     }
 
     setVendorId(id);
-    fetchBookings(id);
+    fetchBookings();
   }, [router, status]);
 
   const summary = useMemo(() => {
@@ -88,14 +93,20 @@ export default function VendorLabBookingsPage() {
   const updateStatus = async (bookingId: string, nextStatus: 'scheduled' | 'completed' | 'cancelled') => {
     try {
       setUpdatingId(bookingId);
-      const res = await fetch(`/api/lab-test-bookings/history?scope=vendor&vendorId=${encodeURIComponent(vendorId)}`, {
+      const token = localStorage.getItem('vendorToken') || '';
+      const res = await fetch(`/api/lab-test-bookings/history?scope=vendor`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'x-vendor-id': vendorId,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ bookingId, status: nextStatus }),
       });
+
+      if (res.status === 401) {
+        router.push('/vendor/login');
+        return;
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -122,7 +133,7 @@ export default function VendorLabBookingsPage() {
             </div>
             <div className="flex gap-2">
               <Link href="/vendor/dashboard" className="px-4 py-2 rounded-lg border border-slate-300 font-semibold hover:bg-slate-50">Back to Dashboard</Link>
-              <button onClick={() => fetchBookings(vendorId)} className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700">Refresh</button>
+              <button onClick={() => fetchBookings()} className="px-4 py-2 rounded-lg bg-emerald-600 text-white font-semibold hover:bg-emerald-700">Refresh</button>
             </div>
           </div>
         </div>
@@ -150,7 +161,7 @@ export default function VendorLabBookingsPage() {
               <option key={s} value={s}>{s.toUpperCase()}</option>
             ))}
           </select>
-          <button onClick={() => fetchBookings(vendorId)} className="px-4 py-2 rounded-lg border border-slate-300 font-semibold hover:bg-slate-50">Apply</button>
+          <button onClick={() => fetchBookings()} className="px-4 py-2 rounded-lg border border-slate-300 font-semibold hover:bg-slate-50">Apply</button>
         </div>
 
         {loading ? (

@@ -114,6 +114,39 @@ const vendorSchema = new mongoose.Schema({
     default: true,
   },
 
+  // Extended shop profile (additive — used by vendor profile management)
+  supportContact: String,
+  socialLinks: {
+    website: String,
+    facebook: String,
+    instagram: String,
+    twitter: String,
+  },
+  pickupAddress: {
+    street: String,
+    city: String,
+    state: String,
+    pincode: String,
+    country: String,
+    phone: String,
+  },
+  warehouseAddress: {
+    street: String,
+    city: String,
+    state: String,
+    pincode: String,
+    country: String,
+    phone: String,
+  },
+  returnAddress: {
+    street: String,
+    city: String,
+    state: String,
+    pincode: String,
+    country: String,
+    phone: String,
+  },
+
   createdAt: {
     type: Date,
     default: () => new Date(),

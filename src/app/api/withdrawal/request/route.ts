@@ -3,14 +3,23 @@ import { connectDB } from '@/lib/db';
 import { WithdrawalRequest } from '@/lib/models/WithdrawalRequest';
 import { Wallet } from '@/lib/models/Wallet';
 import { BankDetails } from '@/lib/models/BankDetails';
-import { Transaction } from '@/lib/models/Transaction';
+import { requireVendorAuth, isAuthError } from '@/lib/vendorAuth';
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
     const body = await request.json();
-    const { doctorId, vendorId, userId, amount, withdrawalMethod } = body;
+    let { doctorId, vendorId, userId, amount, withdrawalMethod } = body;
+
+    // Vendor withdrawals must use JWT; never trust client vendorId alone.
+    if (vendorId) {
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      vendorId = auth.vendorId;
+      doctorId = undefined;
+      userId = undefined;
+    }
 
     if (!userId && !doctorId && !vendorId) {
       return NextResponse.json(
@@ -33,7 +42,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find wallet
     const walletQuery: any = {};
     if (userId) walletQuery.userId = userId;
     if (doctorId) walletQuery.doctorId = doctorId;
@@ -42,13 +50,9 @@ export async function POST(request: NextRequest) {
     const wallet = await Wallet.findOne(walletQuery);
 
     if (!wallet) {
-      return NextResponse.json(
-        { error: 'Wallet not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
     }
 
-    // Check balance
     if (wallet.balance < amount) {
       return NextResponse.json(
         { error: 'Insufficient balance for withdrawal' },
@@ -56,7 +60,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get bank details
     const bankDetails = await BankDetails.findOne(walletQuery);
 
     if (!bankDetails || !bankDetails.isActive) {
@@ -66,7 +69,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create withdrawal request
     const withdrawalRequest = await WithdrawalRequest.create({
       walletId: wallet._id,
       userId: userId || undefined,
@@ -87,7 +89,9 @@ export async function POST(request: NextRequest) {
           status: withdrawalRequest.status,
           withdrawalMethod: withdrawalRequest.withdrawalMethod,
           bankAccount: {
-            accountNumber: bankDetails.accountNumber.slice(-4).padStart(bankDetails.accountNumber.length, '*'),
+            accountNumber: bankDetails.accountNumber
+              .slice(-4)
+              .padStart(bankDetails.accountNumber.length, '*'),
             bankName: bankDetails.bankName,
           },
           requestedAt: withdrawalRequest.requestedAt,
@@ -109,11 +113,17 @@ export async function GET(request: NextRequest) {
     await connectDB();
 
     const doctorId = request.nextUrl.searchParams.get('doctorId');
-    const vendorId = request.nextUrl.searchParams.get('vendorId');
+    let vendorId = request.nextUrl.searchParams.get('vendorId');
     const userId = request.nextUrl.searchParams.get('userId');
-    const status = request.nextUrl.searchParams.get('status'); // Optional filter
+    const status = request.nextUrl.searchParams.get('status');
     const page = parseInt(request.nextUrl.searchParams.get('page') || '1');
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '10');
+
+    if (vendorId) {
+      const auth = requireVendorAuth(request);
+      if (isAuthError(auth)) return auth;
+      vendorId = auth.vendorId;
+    }
 
     if (!userId && !doctorId && !vendorId) {
       return NextResponse.json(
@@ -122,7 +132,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Find wallet
     const walletQuery: any = {};
     if (userId) walletQuery.userId = userId;
     if (doctorId) walletQuery.doctorId = doctorId;
@@ -141,17 +150,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Build query
     const withdrawalQuery: any = { walletId: wallet._id };
-    if (status) {
-      withdrawalQuery.status = status;
-    }
+    if (status) withdrawalQuery.status = status;
 
-    // Get total count
     const total = await WithdrawalRequest.countDocuments(withdrawalQuery);
     const pages = Math.ceil(total / limit);
 
-    // Get withdrawal requests
     const withdrawalRequests = await WithdrawalRequest.find(withdrawalQuery)
       .populate('bankDetailsId', 'bankName accountNumber')
       .sort({ createdAt: -1 })
