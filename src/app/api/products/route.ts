@@ -230,6 +230,7 @@ export async function POST(request: NextRequest) {
       specifications,
       requiresPrescription,
       image,
+      images,
       icon,
       mrp,
       benefit,
@@ -284,6 +285,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const normalizedImages = Array.isArray(images)
+      ? images.map((url: unknown) => String(url || '').trim()).filter(Boolean).slice(0, 4)
+      : [];
+    const primaryImage =
+      (typeof image === 'string' && image.trim()) || normalizedImages[0] || undefined;
+
+    // Normalize bullet-style textareas to newline-separated lines for consistent rendering.
+    const normalizeBulletText = (value: unknown): string | undefined => {
+      if (typeof value !== 'string') return undefined;
+      const lines = value
+        .replace(/<br\s*\/?>/gi, '\n')
+        .split(/\r\n|\n|\r|\u2028|\u2029/)
+        .map((line) => line.replace(/^[-*•]\s*/, '').trim())
+        .filter(Boolean);
+      return lines.length > 0 ? lines.join('\n') : value.trim() || undefined;
+    };
+
     const product = await Product.create({
       _id: await generateProductId(),
       name,
@@ -298,10 +316,11 @@ export async function POST(request: NextRequest) {
       healthConcerns,
       dosage,
       packaging,
-      safetyInformation,
-      specifications,
+      safetyInformation: normalizeBulletText(safetyInformation),
+      specifications: normalizeBulletText(specifications),
       requiresPrescription,
-      image,
+      image: primaryImage,
+      images: normalizedImages,
       icon,
       mrp,
       benefit,

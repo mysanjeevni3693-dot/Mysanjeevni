@@ -258,10 +258,23 @@ export default function DoctorPanelPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update profile');
 
+      const updated = data.doctor || {};
       setDoctorProfile((prev) => ({
         ...(prev as any),
         ...profileForm,
-        email: user.email,
+        ...updated,
+        email: updated.email || user.email,
+        consultationFee:
+          typeof updated.consultationFee === 'number'
+            ? updated.consultationFee
+            : profileForm.consultationFee,
+      }));
+      setProfileForm((prev) => ({
+        ...prev,
+        consultationFee:
+          typeof updated.consultationFee === 'number'
+            ? updated.consultationFee
+            : prev.consultationFee,
       }));
       setShowProfileModal(false);
     } catch (error: any) {

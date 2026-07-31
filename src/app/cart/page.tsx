@@ -10,6 +10,7 @@ import PrescriptionChecker from '@/components/PrescriptionChecker';
 import { isIndiaCountry, normalizeCountryCode, type CountryCode } from '@/lib/countryPreference';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { getMissingPrescriptions, getAllPrescriptions } from '@/lib/prescriptionUtils';
+import { getIndiaFlatShippingCharge } from '@/lib/shippingRates';
 
 interface CartItem {
   id: string | number;
@@ -104,16 +105,26 @@ async function loadRazorpayScript() {
 }
 
 async function loadPayPalScript(clientId: string, currency: string) {
-  if (window.paypal) return true;
+  const scriptId = 'paypal-sdk-script';
+  const desiredSrc =
+    `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}` +
+    `&currency=${encodeURIComponent(currency)}` +
+    '&intent=capture&components=buttons&disable-funding=venmo,paylater,credit';
+
+  const existing = document.getElementById(scriptId) as HTMLScriptElement | null;
+  if (existing) {
+    if (existing.src === desiredSrc && window.paypal) return true;
+    existing.remove();
+    // Force SDK remount when client/currency changes
+    (window as any).paypal = undefined;
+  }
 
   return new Promise<boolean>((resolve) => {
     const script = document.createElement('script');
-    script.src =
-      `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}` +
-      `&currency=${encodeURIComponent(currency)}` +
-      '&intent=capture&components=buttons&disable-funding=venmo,paylater,credit,card';
+    script.id = scriptId;
+    script.src = desiredSrc;
     script.async = true;
-    script.onload = () => resolve(true);
+    script.onload = () => resolve(Boolean(window.paypal));
     script.onerror = () => resolve(false);
     document.body.appendChild(script);
   });
@@ -175,12 +186,13 @@ export default function CartPage() {
   const totalPrice = cartItems.reduce((sum, item) => sum + effectivePrice(item) * (item?.quantity || 0), 0);
   const discount = Math.floor(totalPrice * 0.10); // 10% discount
   const finalPrice = totalPrice - discount;
-  // Delivery charge for India uses the live Shiprocket serviceability rate when
-  // available, otherwise falls back to the existing flat ₹50 (non-breaking).
-  const FLAT_DELIVERY_CHARGE = 50;
-  const serviceableRate =
-    shippingInfo.serviceable && shippingInfo.rate > 0 ? Math.round(shippingInfo.rate) : 0;
-  const deliveryCharge = isIndia ? serviceableRate || FLAT_DELIVERY_CHARGE : 0;
+  // Business rule: Delhi NCR ₹50, rest of India ₹79. International: free shipping.
+  const flatIndiaShipping = getIndiaFlatShippingCharge({
+    city: address.city,
+    state: address.state,
+    pincode: address.postalCode,
+  });
+  const deliveryCharge = isIndia ? flatIndiaShipping : 0;
   const totalAmount = finalPrice + deliveryCharge;
 
   const getStoredCountry = () => {
@@ -371,6 +383,9 @@ export default function CartPage() {
             label: 'paypal',
           },
           createOrder: async () => {
+            if (!user?.id) {
+              throw new Error('Please login before paying with PayPal');
+            }
             const res = await fetch('/api/payments/paypal/create-order', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -378,6 +393,7 @@ export default function CartPage() {
             });
             const data = await res.json();
             if (!res.ok || !data?.orderId) {
+              console.error('[PayPal createOrder UI]', data);
               throw new Error(data?.error || 'Failed to create PayPal order');
             }
             return data.orderId;
@@ -1163,11 +1179,13 @@ export default function CartPage() {
                     <div className="flex justify-between items-center text-gray-700">
                       <span>
                         Delivery{' '}
-                        {deliveryCharge === 0 && (
-                          <span className="text-green-600 font-semibold text-xs">
-                            (FREE)
+                        {isIndia ? (
+                          <span className="text-xs text-gray-500">
+                            ({flatIndiaShipping === 50 ? 'Delhi NCR ₹50' : 'India ₹79'})
                           </span>
-                        )}
+                        ) : deliveryCharge === 0 ? (
+                          <span className="text-green-600 font-semibold text-xs">(FREE)</span>
+                        ) : null}
                         :
                       </span>
                       <span className="font-semibold">
@@ -1183,7 +1201,7 @@ export default function CartPage() {
                     </span>
                   </div>
 
-                  {deliveryCharge > 0 && (
+                  {false && deliveryCharge > 0 && (
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6 text-xs text-blue-700">
                       📦 Add {currencySymbol}{(299 - finalPrice).toFixed(2)} more to get FREE delivery
                     </div>
@@ -1221,6 +1239,12 @@ export default function CartPage() {
                         Address & payment handled securely by Shiprocket Checkout
                       </p>
                     </>
+                  )}
+
+                  {SRC_ENABLED && !isIndia && (
+                    <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-center">
+                      Fast Checkout (Shiprocket) is available for India deliveries. For international orders, please use Buy Now / PayPal below.
+                    </p>
                   )}
 
                   <div className="mt-4 text-xs text-gray-600 text-center space-y-1">
@@ -1435,21 +1459,29 @@ export default function CartPage() {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white text-gray-900 placeholder-gray-500"
                 />
 
-                {/* Live delivery serviceability (Shiprocket) */}
-                {address.country === 'India' && /^\d{6}$/.test(address.postalCode) && (
-                  <div className="mt-2 text-xs">
-                    {shippingInfo.checking ? (
-                      <p className="text-gray-500">Checking delivery availability…</p>
-                    ) : shippingInfo.serviceable && shippingInfo.checkedPincode === address.postalCode ? (
-                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-emerald-800 space-y-0.5">
-                        <p>✓ Deliverable via <span className="font-semibold">{shippingInfo.courier || 'courier partner'}</span></p>
-                        <p>Shipping charge: <span className="font-semibold">₹{Math.round(shippingInfo.rate)}</span></p>
-                        {shippingInfo.etd && <p>Estimated delivery: <span className="font-semibold">{shippingInfo.etd}</span></p>}
-                        <p>COD: <span className="font-semibold">{shippingInfo.codAvailable ? 'Available' : 'Not available'}</span></p>
-                      </div>
-                    ) : shippingInfo.error && shippingInfo.checkedPincode === address.postalCode ? (
-                      <p className="text-red-600">{shippingInfo.error}</p>
-                    ) : null}
+                {/* Shipping charge (NCR ₹50 / rest of India ₹79) + courier availability */}
+                {address.country === 'India' && (
+                  <div className="mt-2 text-xs rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-emerald-800 space-y-0.5">
+                    <p>
+                      Shipping charge:{' '}
+                      <span className="font-semibold">₹{flatIndiaShipping}</span>
+                      {' '}({flatIndiaShipping === 50 ? 'Delhi NCR' : 'Rest of India'})
+                    </p>
+                    {/^\d{6}$/.test(address.postalCode) && (
+                      <>
+                        {shippingInfo.checking ? (
+                          <p className="text-gray-600">Checking courier availability…</p>
+                        ) : shippingInfo.serviceable && shippingInfo.checkedPincode === address.postalCode ? (
+                          <>
+                            <p>✓ Deliverable via <span className="font-semibold">{shippingInfo.courier || 'courier partner'}</span></p>
+                            {shippingInfo.etd && <p>Estimated delivery: <span className="font-semibold">{shippingInfo.etd}</span></p>}
+                            <p>COD: <span className="font-semibold">{shippingInfo.codAvailable ? 'Available' : 'Not available'}</span></p>
+                          </>
+                        ) : shippingInfo.error && shippingInfo.checkedPincode === address.postalCode ? (
+                          <p className="text-amber-700">{shippingInfo.error}</p>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

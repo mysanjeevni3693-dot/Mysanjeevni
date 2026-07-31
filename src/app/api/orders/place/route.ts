@@ -248,6 +248,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Send order confirmation email via Resend (best-effort).
+    try {
+      const customerEmail = String((user as any)?.email || '').trim();
+      if (customerEmail) {
+        const { sendOrderConfirmationEmail } = await import('@/lib/resend');
+        const currencySymbol =
+          String(input.deliveryAddress.country || 'India').toLowerCase() === 'india' ||
+          String(input.deliveryAddress.country || '').toLowerCase() === 'in'
+            ? '₹'
+            : '$';
+        await sendOrderConfirmationEmail({
+          to: customerEmail,
+          customerName: input.deliveryAddress.fullName || (user as any)?.fullName || 'Customer',
+          orderId: String(order._id),
+          totalAmount: input.totalAmount,
+          currencySymbol,
+          paymentMethod: input.paymentMethod,
+          paymentStatus: input.paymentStatus,
+          items: input.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            price: item.price,
+          })),
+          deliveryAddress: input.deliveryAddress,
+        });
+      }
+    } catch (emailErr) {
+      console.error('Order confirmation email failed (non-fatal):', emailErr);
+    }
+
     return ok(
       {
         orderId: String(order._id),

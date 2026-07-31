@@ -333,27 +333,8 @@ const CATEGORIES: Category[] = [
     icon: '💊',
     color: 'emerald',
     href: '/medicines',
-    subcategories: [
-      'All',
-      'Addiction',
-      'Anxiety & Depression',
-      'Sleeplessness',
-      'Weak Memory',
-      'Acne & Pimples',
-      'Dark Circles & Marks',
-      'Wrinkles & Aging',
-      'Hair Fall',
-      'Dandruff',
-      'Cough',
-      'Asthma',
-      'Bronchitis',
-      'Indigestion/Acidity/Gas',
-      'Diabetes',
-      'Blood Pressure',
-      'Headache & Migraine',
-      'Back & Knee Pain',
-      'Arthritis & Joint Pains',
-    ],
+    subcategories: ['All', ...flattenSubcategories(DISEASE_GROUPED_SUBCATEGORIES)],
+    groupedSubcategories: DISEASE_GROUPED_SUBCATEGORIES,
   },
   {
     name: 'Ayurveda',
@@ -624,7 +605,8 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
 
   const getSubcategoryHref = (categoryName: string, subcategoryName: string) => {
     if (categoryName === 'Medicines') {
-      return buildHref('/medicines', { subcategory: subcategoryName });
+      // Medicines mega-menu lists disease concerns — keep disease filter params.
+      return buildHref('/medicines', { category: 'disease', subcategory: subcategoryName });
     }
 
     if (categoryName === 'Ayurveda') {
@@ -636,7 +618,6 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
     }
 
     if (categoryName === 'Disease') {
-      // For Disease, use category param with the disease category name
       return buildHref('/medicines', { category: 'disease', subcategory: subcategoryName });
     }
 
@@ -733,7 +714,9 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
           <div
             className={`absolute ${dropdownPositionClass} mt-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50`}
           >
-            {getTreeNodeForCategory(categoryTree, category.name)?.children?.length ? (
+            {category.name !== 'Medicines' &&
+            category.name !== 'Disease' &&
+            getTreeNodeForCategory(categoryTree, category.name)?.children?.length ? (
               renderTreeDropdown(getTreeNodeForCategory(categoryTree, category.name)!.children, category.name, category.color)
             ) : category.groupedSubcategories ? (
               <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-5" style={{ width: '780px', maxWidth: '80vw' }}>

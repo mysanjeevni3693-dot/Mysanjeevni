@@ -27,18 +27,33 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
 
     if (!response.ok) {
+      console.error('[PayPal capture-order] failed', {
+        status: response.status,
+        orderID,
+        mode: process.env.PAYPAL_MODE || 'sandbox',
+        details: data,
+      });
       return NextResponse.json(
         { error: data?.message || data?.name || 'Failed to capture PayPal order', details: data },
         { status: 500 }
       );
     }
 
+    if (data?.status !== 'COMPLETED') {
+      console.error('[PayPal capture-order] incomplete status', { orderID, status: data?.status, details: data });
+      return NextResponse.json(
+        { success: false, status: data?.status, error: 'PayPal payment was not completed', details: data },
+        { status: 402 }
+      );
+    }
+
     return NextResponse.json({
-      success: data?.status === 'COMPLETED',
+      success: true,
       status: data?.status,
       capture: data,
     });
   } catch (error: any) {
+    console.error('[PayPal capture-order] exception', error);
     return NextResponse.json(
       { error: error?.message || 'Failed to capture PayPal order' },
       { status: 500 }

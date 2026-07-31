@@ -58,7 +58,7 @@ export default function ForgotPasswordPage() {
 
       setOtpSent(true);
       setCooldown(Number(data.cooldownSeconds || 60));
-      setSuccess('OTP sent to your registered email address.');
+      setSuccess('OTP sent to your registered email. Use the OTP here (a reset page link is also included in the email).');
     } catch {
       setError('Failed to send OTP. Please try again.');
     } finally {

@@ -77,7 +77,8 @@ export async function PUT(request: NextRequest) {
       isAvailable,
     } = body;
 
-    if (!email) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (!normalizedEmail) {
       return NextResponse.json({ error: 'email is required' }, { status: 400 });
     }
 
@@ -89,7 +90,13 @@ export async function PUT(request: NextRequest) {
     if (experience !== undefined) updates.experience = Number(experience) || 0;
     if (qualification !== undefined) updates.qualification = qualification;
     if (bio !== undefined) updates.bio = bio;
-    if (consultationFee !== undefined) updates.consultationFee = Number(consultationFee) || 0;
+    if (consultationFee !== undefined && consultationFee !== null && consultationFee !== '') {
+      const fee = Number(consultationFee);
+      if (!Number.isFinite(fee) || fee < 0) {
+        return NextResponse.json({ error: 'Consultation fee must be a valid non-negative number' }, { status: 400 });
+      }
+      updates.consultationFee = fee;
+    }
     if (availableDates !== undefined && Array.isArray(availableDates)) {
       updates.availableDates = Array.from(
         new Set(
@@ -103,16 +110,26 @@ export async function PUT(request: NextRequest) {
     if (isAvailable !== undefined) updates.isAvailable = !!isAvailable;
 
     const doctor = await Doctor.findOneAndUpdate(
-      { email },
+      { email: normalizedEmail },
       { $set: updates },
       { new: true }
     ).lean();
 
-    if (!doctor) {
+    // Fallback for legacy rows stored with different email casing
+    let resolvedDoctor = doctor;
+    if (!resolvedDoctor) {
+      resolvedDoctor = await Doctor.findOneAndUpdate(
+        { email: { $regex: new RegExp(`^${normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
+        { $set: { ...updates, email: normalizedEmail } },
+        { new: true }
+      ).lean();
+    }
+
+    if (!resolvedDoctor) {
       return NextResponse.json({ error: 'Doctor profile not found for this email' }, { status: 404 });
     }
 
-    return NextResponse.json({ message: 'Profile updated successfully', doctor });
+    return NextResponse.json({ message: 'Profile updated successfully', doctor: resolvedDoctor });
   } catch (error: any) {
     console.error('Doctor profile update error:', error);
     return NextResponse.json({ error: error.message || 'Internal server error' }, { status: 500 });

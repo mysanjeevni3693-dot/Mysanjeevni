@@ -147,7 +147,10 @@ const getQuantityVariantKey = (item: Product) => {
 
 const toLineItems = (value?: string): string[] =>
   (value || '')
-    .split(/\r?\n/)
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/\u2022/g, '\n• ')
+    .split(/\r\n|\n|\r|\u2028|\u2029|(?<=[.!?])\s+(?=[A-Z•\-*])/)
+    .flatMap((chunk) => chunk.split(/(?:^|\s)[•]\s+/))
     .map((line) => line.replace(/^[-*•]\s*/, '').trim())
     .filter(Boolean);
 
@@ -1088,16 +1091,16 @@ export default function MedicineDetailsPage() {
                     <div className="space-y-4">
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                         <h4 className="font-bold text-orange-900 mb-2">⚠️ Safety Information</h4>
-                        <ul className="space-y-2 text-sm text-orange-900">
+                        <ul className="list-disc pl-5 space-y-2 text-sm text-orange-900">
                           {safetyItems.length > 0 ? (
-                            safetyItems.map((item) => <li key={item}>• {item}</li>)
+                            safetyItems.map((item) => <li key={item}>{item}</li>)
                           ) : (
                             <>
-                              <li>• Read the label carefully before use</li>
-                              <li>• Store in a cool and dry place away from direct sunlight</li>
-                              <li>• Keep out of reach of children</li>
-                              <li>• Use as directed by physician</li>
-                              <li>• Do not use if allergic to any ingredients</li>
+                              <li>Read the label carefully before use</li>
+                              <li>Store in a cool and dry place away from direct sunlight</li>
+                              <li>Keep out of reach of children</li>
+                              <li>Use as directed by physician</li>
+                              <li>Do not use if allergic to any ingredients</li>
                             </>
                           )}
                         </ul>
@@ -1117,9 +1120,9 @@ export default function MedicineDetailsPage() {
                       {specificationItems.length > 0 && (
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                           <h4 className="font-bold text-slate-900 mb-2">Specifications</h4>
-                          <ul className="space-y-2 text-sm text-slate-700">
+                          <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">
                             {specificationItems.map((item) => (
-                              <li key={item}>• {item}</li>
+                              <li key={item}>{item}</li>
                             ))}
                           </ul>
                         </div>
