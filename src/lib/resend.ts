@@ -222,7 +222,7 @@ function generateOrderConfirmationTemplate(options: OrderConfirmationOptions): s
        Phone: ${escapeHtml(addr.phone || '')}`
     : 'As provided during checkout';
 
-  const trackUrl = `${getSiteUrl()}/orders`;
+  const trackUrl = `${getSiteUrl()}/track?orderId=${encodeURIComponent(options.orderId)}`;
 
   return `
     <!DOCTYPE html>

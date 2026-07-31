@@ -2,47 +2,87 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { Order } from '@/lib/models/Order';
 import { trackShipment } from '@/lib/shiprocket';
+import mongoose from 'mongoose';
 
 export const dynamic = 'force-dynamic';
+
+function serializeOrder(order: any) {
+  return {
+    id: String(order._id),
+    status: String(order.status || 'pending'),
+    paymentMethod: String(order.paymentMethod || ''),
+    paymentStatus: String(order.paymentStatus || ''),
+    totalAmount: Number(order.totalPrice ?? order.totalAmount ?? 0),
+    createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : new Date().toISOString(),
+    items: Array.isArray(order.items)
+      ? order.items.map((item: any) => ({
+          name: String(item.productName || item.name || 'Item'),
+          quantity: Number(item.quantity || 0),
+          price: Number(item.price || 0),
+        }))
+      : [],
+    awbNumber: order.awbNumber || '',
+    courierName: order.courierName || '',
+    shipmentStatus: order.shipmentStatus || '',
+  };
+}
 
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
-    const orderId = request.nextUrl.searchParams.get('orderId');
+    const orderId = String(request.nextUrl.searchParams.get('orderId') || '').trim();
     if (!orderId) {
-      return NextResponse.json({ error: 'orderId query param is required' }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: { message: 'orderId query param is required' } },
+        { status: 400 }
+      );
     }
 
-    const order = await Order.findById(orderId);
+    if (!mongoose.isValidObjectId(orderId)) {
+      return NextResponse.json(
+        { success: false, error: { message: 'Invalid order ID' } },
+        { status: 400 }
+      );
+    }
+
+    const order = await Order.findById(orderId).lean();
     if (!order) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+      return NextResponse.json(
+        { success: false, error: { message: 'Order not found' } },
+        { status: 404 }
+      );
     }
 
-    // Prefer AWB for tracking if available
+    const serialized = serializeOrder(order);
+    let liveTracking: unknown = null;
+    let trackingError = '';
+
+    // Live courier tracking is optional — pending COD orders often have no AWB yet.
     try {
       if (order.awbNumber) {
-        const track = await trackShipment({ awb: order.awbNumber });
-        return NextResponse.json({ tracking: track }, { status: 200 });
+        liveTracking = await trackShipment({ awb: String(order.awbNumber) });
+      } else if (order.shiprocketShipmentId) {
+        liveTracking = await trackShipment({
+          shipmentId: String(order.shiprocketShipmentId),
+        });
       }
-
-      if (order.shiprocketShipmentId) {
-        const track = await trackShipment({ shipment_id: order.shiprocketShipmentId });
-        return NextResponse.json({ tracking: track }, { status: 200 });
-      }
-
-      if (order.shiprocketOrderId) {
-        const track = await trackShipment({ order_id: order.shiprocketOrderId });
-        return NextResponse.json({ tracking: track }, { status: 200 });
-      }
-
-      return NextResponse.json({ error: 'No tracking identifiers available for this order' }, { status: 400 });
     } catch (err: any) {
-      console.error('Tracking fetch error:', err?.message || err);
-      return NextResponse.json({ error: 'Failed to fetch tracking info' }, { status: 502 });
+      trackingError = err?.message || 'Live courier tracking is temporarily unavailable';
+      console.error('Tracking fetch error:', trackingError);
     }
+
+    return NextResponse.json({
+      success: true,
+      order: serialized,
+      tracking: liveTracking,
+      trackingError: trackingError || undefined,
+    });
   } catch (error: any) {
     console.error('Order tracking error:', error?.message || error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: { message: 'Internal server error' } },
+      { status: 500 }
+    );
   }
 }

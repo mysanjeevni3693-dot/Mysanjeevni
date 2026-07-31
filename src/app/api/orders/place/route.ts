@@ -1,22 +1,13 @@
 /**
  * POST /api/orders/place
  *
- * Persists a customer order to the database AFTER a successful payment (Razorpay
- * / PayPal) or COD confirmation, then automatically runs the Shiprocket
- * fulfilment pipeline for Indian orders:
+ * Persists a customer order AFTER payment / COD confirmation, then automatically
+ * runs Shiprocket fulfilment for Indian orders:
  *
- *   Save order (DB) -> Create Shiprocket order -> Assign AWB -> Schedule pickup
+ *   Save order → Create SR order → Assign AWB → Pickup → Label + Invoice PDFs
  *
- * The database order is always saved first and is the source of truth. Every
- * Shiprocket step is best-effort: a failure is logged and stored on the order
- * (so the admin Shipments panel can retry) but never fails the purchase.
- *
- * Label / invoice / manifest remain admin-triggered (they are print actions,
- * and manifest is typically batched per pickup) via /admin/shipments.
- *
- * This endpoint is intentionally additive: the existing localStorage-based order
- * screens keep working via the checkout's dual-write. It does NOT create a
- * payment order (payment is already completed by the time it is called).
+ * Pending COD is included (not blocked). Admin work is pack + print only.
+ * Shipping failures are best-effort and never fail the purchase.
  */
 
 import { NextRequest } from 'next/server';
@@ -28,12 +19,9 @@ import { Address } from '@/lib/models/Address';
 import { User } from '@/lib/models/User';
 import { Product } from '@/lib/models/Product';
 import { hasShiprocketCredentials } from '@/lib/shiprocket/config';
-import { createShiprocketOrder } from '@/lib/shiprocket/order';
-import { assignAwb } from '@/lib/shiprocket/shipment';
-import { generatePickup } from '@/lib/shiprocket/pickup';
-import { shiprocketLogger } from '@/lib/shiprocket/logger';
 import { ok, fail, handleRouteError } from '@/lib/shiprocket/response';
-import { buildCreateOrderInput, type OrderDocument } from '../../shiprocket/_shippingService';
+import { type OrderDocument } from '../../shiprocket/_shippingService';
+import { runShiprocketFulfillmentPipeline } from '../../shiprocket/_pipeline';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,64 +59,11 @@ const placeOrderSchema = z.object({
   razorpayOrderId: z.string().trim().optional(),
   razorpayPaymentId: z.string().trim().optional(),
   orderNotes: z.string().trim().optional().default(''),
+  /** Optional explicit recipient — used when user profile email is missing. */
+  customerEmail: z.string().trim().optional().default(''),
 });
 
 type PlaceOrderInput = z.infer<typeof placeOrderSchema>;
-
-/**
- * Runs the automatic Shiprocket pipeline for a freshly created order.
- * Each step is guarded so a failure is recorded but never throws.
- */
-async function runShiprocketPipeline(order: OrderDocument): Promise<void> {
-  // Step 1: create the Shiprocket order.
-  let shipmentId = '';
-  try {
-    const input = await buildCreateOrderInput(order);
-    const created = await createShiprocketOrder(input);
-    shipmentId = created.shipmentId;
-    Object.assign(order, {
-      shiprocketOrderId: created.shiprocketOrderId,
-      shiprocketShipmentId: created.shipmentId,
-      shipmentStatus: 'PENDING',
-    });
-    await order.save();
-  } catch (error) {
-    shiprocketLogger.error('order', 'Auto create-order failed', {
-      orderId: String(order._id),
-      message: error instanceof Error ? error.message : 'unknown',
-    });
-    return; // Without a shipment id the remaining steps cannot proceed.
-  }
-
-  // Step 2: assign an AWB (courier + tracking number).
-  try {
-    const awb = await assignAwb({ shipmentId });
-    Object.assign(order, { awbNumber: awb.awbCode, courierName: awb.courierName });
-    await order.save();
-  } catch (error) {
-    shiprocketLogger.error('shipment', 'Auto assign-awb failed', {
-      orderId: String(order._id),
-      message: error instanceof Error ? error.message : 'unknown',
-    });
-    return; // Pickup requires an assigned AWB.
-  }
-
-  // Step 3: schedule a pickup.
-  try {
-    const pickup = await generatePickup({ shipmentId });
-    Object.assign(order, {
-      pickupStatus: pickup.pickupStatus,
-      pickupTokenNumber: pickup.pickupTokenNumber,
-      shipmentStatus: pickup.pickupScheduled ? 'PICKUP_SCHEDULED' : 'PENDING',
-    });
-    await order.save();
-  } catch (error) {
-    shiprocketLogger.error('pickup', 'Auto generate-pickup failed', {
-      orderId: String(order._id),
-      message: error instanceof Error ? error.message : 'unknown',
-    });
-  }
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -214,7 +149,7 @@ export async function POST(request: NextRequest) {
     const shouldShip = isIndia && input.paymentStatus !== 'failed' && hasShiprocketCredentials();
 
     if (shouldShip) {
-      await runShiprocketPipeline(order);
+      await runShiprocketFulfillmentPipeline(order);
     }
 
     // Notify vendors of the new order (best-effort).
@@ -251,15 +186,22 @@ export async function POST(request: NextRequest) {
     // Send order confirmation email via Resend (best-effort).
     try {
       const customer = await User.findById(input.userId).select('email fullName').lean();
-      const customerEmail = String((customer as any)?.email || '').trim();
-      if (customerEmail) {
+      const profileEmail = String((customer as any)?.email || '').trim();
+      const payloadEmail = String(input.customerEmail || '').trim();
+      const customerEmail =
+        (payloadEmail.includes('@') ? payloadEmail : '') ||
+        (profileEmail.includes('@') ? profileEmail : '');
+
+      if (!customerEmail) {
+        console.warn('[orders/place] Skipping confirmation email — no customer email', {
+          orderId: String(order._id),
+          userId: input.userId,
+        });
+      } else {
         const { sendOrderConfirmationEmail } = await import('@/lib/resend');
-        const currencySymbol =
-          String(input.deliveryAddress.country || 'India').toLowerCase() === 'india' ||
-          String(input.deliveryAddress.country || '').toLowerCase() === 'in'
-            ? '₹'
-            : '$';
-        await sendOrderConfirmationEmail({
+        const country = String(input.deliveryAddress.country || 'India').toLowerCase();
+        const currencySymbol = country === 'india' || country === 'in' ? '₹' : '$';
+        const emailResult = await sendOrderConfirmationEmail({
           to: customerEmail,
           customerName: input.deliveryAddress.fullName || (customer as any)?.fullName || 'Customer',
           orderId: String(order._id),
@@ -274,6 +216,9 @@ export async function POST(request: NextRequest) {
           })),
           deliveryAddress: input.deliveryAddress,
         });
+        if (!emailResult.success) {
+          console.error('[orders/place] Confirmation email not delivered:', emailResult.error);
+        }
       }
     } catch (emailErr) {
       console.error('Order confirmation email failed (non-fatal):', emailErr);
@@ -288,6 +233,9 @@ export async function POST(request: NextRequest) {
         courierName: order.courierName ?? '',
         shipmentStatus: order.shipmentStatus ?? '',
         pickupStatus: order.pickupStatus ?? '',
+        labelUrl: order.labelUrl ?? '',
+        invoiceUrl: order.invoiceUrl ?? '',
+        shiprocketLastError: order.shiprocketLastError ?? '',
       },
       201
     );

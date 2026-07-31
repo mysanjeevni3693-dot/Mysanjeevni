@@ -1,13 +1,11 @@
 'use client';
 
 /**
- * Admin → Shipments management.
+ * Admin → Shipments
  *
- * Additive page (does not modify the existing Orders page). Lists database
- * orders and lets an admin drive the full Shiprocket workflow: create shipment,
- * assign AWB, schedule pickup, generate label/invoice/manifest, track, refresh
- * status and cancel. All Shiprocket calls go through the server API routes; no
- * credentials are ever exposed to this client.
+ * Auto-fulfilment creates shipment + AWB + pickup + label/invoice PDFs on order
+ * place. This page is for packing: print label/invoice, retry if auto failed,
+ * and optional manifest/cancel.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -17,6 +15,7 @@ interface ShipmentOrder {
   totalPrice?: number;
   status?: string;
   paymentStatus?: string;
+  paymentMethod?: string;
   shippingCharge?: number;
   courierName?: string;
   shiprocketOrderId?: string;
@@ -29,12 +28,13 @@ interface ShipmentOrder {
   manifestUrl?: string;
   estimatedDelivery?: string;
   trackingUrl?: string;
+  shiprocketLastError?: string;
+  shiprocketPipelineStep?: string;
   createdAt?: string;
   userId?: { fullName?: string; email?: string; phone?: string } | string;
   deliveryAddress?: { city?: string; state?: string; pincode?: string } | string;
 }
 
-/** Builds the admin auth headers expected by the Shiprocket management routes. */
 function adminHeaders(): HeadersInit {
   if (typeof window === 'undefined') return {};
   return {
@@ -46,12 +46,11 @@ function adminHeaders(): HeadersInit {
 }
 
 type ShipmentAction =
-  | 'create-order'
-  | 'assign-awb'
-  | 'generate-pickup'
+  | 'auto-fulfill'
   | 'generate-label'
   | 'generate-invoice'
   | 'generate-manifest'
+  | 'generate-pickup'
   | 'cancel';
 
 export default function AdminShipments() {
@@ -79,15 +78,12 @@ export default function AdminShipments() {
   }, []);
 
   useEffect(() => {
-    // Wrap in an async runner so no setState happens synchronously in the effect
-    // body (satisfies react-hooks/set-state-in-effect).
     const load = async () => {
       await fetchOrders();
     };
     void load();
   }, [fetchOrders]);
 
-  /** Runs a Shiprocket management action for one order, then refreshes. */
   const runAction = async (orderId: string, action: ShipmentAction) => {
     const confirmCancel = action === 'cancel' && !window.confirm('Cancel this shipment in Shiprocket?');
     if (confirmCancel) return;
@@ -115,7 +111,6 @@ export default function AdminShipments() {
     }
   };
 
-  /** Fetches live tracking for an order and shows it in a modal. */
   const trackOrder = async (orderId: string) => {
     setBusyKey(`${orderId}:track`);
     setNotice(null);
@@ -149,11 +144,25 @@ export default function AdminShipments() {
     );
   }
 
+  const needsAttention = orders.filter((o) => !o.awbNumber).length;
+  const readyToPack = orders.filter((o) => o.awbNumber).length;
+
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
       <div className="mb-6">
         <h1 className="text-4xl font-bold text-slate-900">Shipments</h1>
-        <p className="text-slate-600 mt-2">Manage Shiprocket shipping for database orders.</p>
+        <p className="text-slate-600 mt-2">
+          Shipments and AWBs are created automatically when a customer places an India order.
+          Pack the order, then print the label and invoice.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+          <span className="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 font-medium">
+            Ready to pack: {readyToPack}
+          </span>
+          <span className="rounded-full bg-amber-100 text-amber-800 px-3 py-1 font-medium">
+            Needs auto-fulfill: {needsAttention}
+          </span>
+        </div>
       </div>
 
       {notice && (
@@ -174,9 +183,9 @@ export default function AdminShipments() {
             <tr>
               <th className="px-4 py-3 font-semibold text-slate-700">Order</th>
               <th className="px-4 py-3 font-semibold text-slate-700">Customer</th>
-              <th className="px-4 py-3 font-semibold text-slate-700">Shipment</th>
+              <th className="px-4 py-3 font-semibold text-slate-700">Shipment / AWB</th>
               <th className="px-4 py-3 font-semibold text-slate-700">Status</th>
-              <th className="px-4 py-3 font-semibold text-slate-700">Documents</th>
+              <th className="px-4 py-3 font-semibold text-slate-700">Print</th>
               <th className="px-4 py-3 font-semibold text-slate-700">Actions</th>
             </tr>
           </thead>
@@ -184,21 +193,23 @@ export default function AdminShipments() {
             {orders.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
-                  No database orders found. Orders created through the DB order API appear here.
+                  No database orders found.
                 </td>
               </tr>
             ) : (
               orders.map((order) => {
                 const user = typeof order.userId === 'object' ? order.userId : undefined;
                 const addr = typeof order.deliveryAddress === 'object' ? order.deliveryAddress : undefined;
-                const hasShipment = Boolean(order.shiprocketShipmentId);
                 const hasAwb = Boolean(order.awbNumber);
+                const hasError = Boolean(order.shiprocketLastError);
                 return (
                   <tr key={order._id} className="align-top hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <p className="font-medium text-slate-900">#{order._id.slice(-8)}</p>
                       <p className="text-xs text-slate-500">₹{Number(order.totalPrice || 0).toFixed(2)}</p>
-                      <p className="text-xs text-slate-500">{order.paymentStatus || 'pending'}</p>
+                      <p className="text-xs text-slate-500">
+                        {String(order.paymentMethod || order.paymentStatus || 'pending').toUpperCase()}
+                      </p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-slate-800">{user?.fullName || 'N/A'}</p>
@@ -209,75 +220,93 @@ export default function AdminShipments() {
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600 space-y-0.5">
                       <p>SR Order: {order.shiprocketOrderId || '—'}</p>
-                      <p>Shipment: {order.shiprocketShipmentId || '—'}</p>
-                      <p>AWB: {order.awbNumber || '—'}</p>
+                      <p className="font-semibold text-slate-900">AWB: {order.awbNumber || 'Not assigned'}</p>
                       <p>Courier: {order.courierName || '—'}</p>
+                      {hasError && (
+                        <p className="text-red-600 mt-1 max-w-xs">Error: {order.shiprocketLastError}</p>
+                      )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="inline-block rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
-                        {order.shipmentStatus || 'NOT CREATED'}
+                      <span
+                        className={`inline-block rounded-full px-2 py-1 text-xs font-medium ${
+                          hasAwb
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {hasAwb ? 'Ready to pack' : 'Awaiting AWB'}
                       </span>
-                      <p className="mt-1 text-xs text-slate-500">Pickup: {order.pickupStatus || '—'}</p>
-                      {order.estimatedDelivery && (
-                        <p className="text-xs text-slate-500">ETA: {order.estimatedDelivery}</p>
-                      )}
+                      <p className="mt-1 text-xs text-slate-500">
+                        {order.shipmentStatus || 'NOT CREATED'}
+                      </p>
+                      <p className="text-xs text-slate-500">Pickup: {order.pickupStatus || '—'}</p>
                     </td>
                     <td className="px-4 py-3 text-xs space-y-1">
                       <DocLink label="Label" url={order.labelUrl} />
                       <DocLink label="Invoice" url={order.invoiceUrl} />
                       <DocLink label="Manifest" url={order.manifestUrl} />
+                      {hasAwb && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          <ActionButton
+                            label="Print Label"
+                            onClick={() =>
+                              order.labelUrl
+                                ? window.open(order.labelUrl, '_blank')
+                                : runAction(order._id, 'generate-label')
+                            }
+                            disabled={isBusy(order._id, 'generate-label')}
+                            busy={isBusy(order._id, 'generate-label')}
+                          />
+                          <ActionButton
+                            label="Print Invoice"
+                            onClick={() =>
+                              order.invoiceUrl
+                                ? window.open(order.invoiceUrl, '_blank')
+                                : runAction(order._id, 'generate-invoice')
+                            }
+                            disabled={isBusy(order._id, 'generate-invoice')}
+                            busy={isBusy(order._id, 'generate-invoice')}
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1.5">
-                        <ActionButton
-                          label="Create"
-                          onClick={() => runAction(order._id, 'create-order')}
-                          disabled={hasShipment || isBusy(order._id, 'create-order')}
-                          busy={isBusy(order._id, 'create-order')}
-                        />
-                        <ActionButton
-                          label="Assign AWB"
-                          onClick={() => runAction(order._id, 'assign-awb')}
-                          disabled={!hasShipment || hasAwb || isBusy(order._id, 'assign-awb')}
-                          busy={isBusy(order._id, 'assign-awb')}
-                        />
-                        <ActionButton
-                          label="Pickup"
-                          onClick={() => runAction(order._id, 'generate-pickup')}
-                          disabled={!hasAwb || isBusy(order._id, 'generate-pickup')}
-                          busy={isBusy(order._id, 'generate-pickup')}
-                        />
-                        <ActionButton
-                          label="Label"
-                          onClick={() => runAction(order._id, 'generate-label')}
-                          disabled={!hasAwb || isBusy(order._id, 'generate-label')}
-                          busy={isBusy(order._id, 'generate-label')}
-                        />
-                        <ActionButton
-                          label="Invoice"
-                          onClick={() => runAction(order._id, 'generate-invoice')}
-                          disabled={!hasShipment || isBusy(order._id, 'generate-invoice')}
-                          busy={isBusy(order._id, 'generate-invoice')}
-                        />
-                        <ActionButton
-                          label="Manifest"
-                          onClick={() => runAction(order._id, 'generate-manifest')}
-                          disabled={!hasAwb || isBusy(order._id, 'generate-manifest')}
-                          busy={isBusy(order._id, 'generate-manifest')}
-                        />
-                        <ActionButton
-                          label="Track"
-                          onClick={() => trackOrder(order._id)}
-                          disabled={!hasAwb || isBusy(order._id, 'track')}
-                          busy={isBusy(order._id, 'track')}
-                        />
-                        <ActionButton
-                          label="Refresh"
-                          onClick={() => trackOrder(order._id)}
-                          disabled={!hasAwb || isBusy(order._id, 'track')}
-                          busy={isBusy(order._id, 'track')}
-                          variant="ghost"
-                        />
+                        {!hasAwb && (
+                          <ActionButton
+                            label="Auto-fulfill"
+                            onClick={() => runAction(order._id, 'auto-fulfill')}
+                            disabled={isBusy(order._id, 'auto-fulfill')}
+                            busy={isBusy(order._id, 'auto-fulfill')}
+                          />
+                        )}
+                        {hasAwb && hasError && (
+                          <ActionButton
+                            label="Retry docs"
+                            onClick={() => runAction(order._id, 'auto-fulfill')}
+                            disabled={isBusy(order._id, 'auto-fulfill')}
+                            busy={isBusy(order._id, 'auto-fulfill')}
+                            variant="ghost"
+                          />
+                        )}
+                        {hasAwb && (
+                          <>
+                            <ActionButton
+                              label="Manifest"
+                              onClick={() => runAction(order._id, 'generate-manifest')}
+                              disabled={isBusy(order._id, 'generate-manifest')}
+                              busy={isBusy(order._id, 'generate-manifest')}
+                              variant="ghost"
+                            />
+                            <ActionButton
+                              label="Track"
+                              onClick={() => trackOrder(order._id)}
+                              disabled={isBusy(order._id, 'track')}
+                              busy={isBusy(order._id, 'track')}
+                              variant="ghost"
+                            />
+                          </>
+                        )}
                         <ActionButton
                           label="Cancel"
                           onClick={() => runAction(order._id, 'cancel')}
@@ -318,8 +347,7 @@ interface TrackingView {
 
 function labelForAction(action: ShipmentAction): string {
   const map: Record<ShipmentAction, string> = {
-    'create-order': 'Create shipment',
-    'assign-awb': 'AWB assignment',
+    'auto-fulfill': 'Auto-fulfilment',
     'generate-pickup': 'Pickup generation',
     'generate-label': 'Label generation',
     'generate-invoice': 'Invoice generation',
@@ -335,7 +363,7 @@ function DocLink({ label, url }: { label: string; url?: string }) {
     <p>
       {label}:{' '}
       <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-        View
+        Open
       </a>
     </p>
   );
@@ -354,16 +382,19 @@ function ActionButton({
   busy?: boolean;
   variant?: 'primary' | 'ghost' | 'danger';
 }) {
-  const styles: Record<string, string> = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white',
-    ghost: 'bg-slate-100 hover:bg-slate-200 text-slate-700',
-    danger: 'bg-red-600 hover:bg-red-700 text-white',
-  };
+  const styles =
+    variant === 'danger'
+      ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100'
+      : variant === 'ghost'
+        ? 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+        : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700';
+
   return (
     <button
+      type="button"
       onClick={onClick}
-      disabled={disabled}
-      className={`rounded px-2 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${styles[variant]}`}
+      disabled={disabled || busy}
+      className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${styles}`}
     >
       {busy ? '…' : label}
     </button>
@@ -380,34 +411,44 @@ function TrackingModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-lg w-full p-6 max-h-[80vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-bold text-slate-900">Tracking #{orderId.slice(-8)}</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 text-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Live tracking</h2>
+            <p className="text-xs text-slate-500">Order #{orderId.slice(-8)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800">
             ✕
           </button>
         </div>
-        <div className="mb-4 text-sm text-slate-600 space-y-0.5">
-          <p>AWB: <span className="font-medium text-slate-900">{data.awb || '—'}</span></p>
-          <p>Courier: <span className="font-medium text-slate-900">{data.courierName || '—'}</span></p>
-          <p>Status: <span className="font-medium text-slate-900">{data.currentStatus}</span></p>
-          {data.estimatedDelivery && <p>ETA: {data.estimatedDelivery}</p>}
+        <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+          <div>
+            <p className="text-xs text-slate-500">Courier</p>
+            <p className="font-semibold">{data.courierName || '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">AWB</p>
+            <p className="font-semibold">{data.awb || '—'}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">Status</p>
+            <p className="font-semibold text-emerald-700">{data.currentStatus || data.rawStatus}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500">ETA</p>
+            <p className="font-semibold">{data.estimatedDelivery || '—'}</p>
+          </div>
         </div>
-        <ol className="relative border-l border-slate-200 pl-4 space-y-4">
-          {data.activities.length === 0 ? (
-            <li className="text-sm text-slate-500">No tracking activity yet.</li>
-          ) : (
-            data.activities.map((activity, idx) => (
-              <li key={idx} className="ml-2">
-                <div className="absolute -left-1.5 mt-1 h-3 w-3 rounded-full bg-blue-500" />
-                <p className="text-sm font-medium text-slate-900">{activity.activity || activity.status}</p>
-                <p className="text-xs text-slate-500">
-                  {activity.location} {activity.date ? `• ${activity.date}` : ''}
-                </p>
-              </li>
-            ))
-          )}
+        <ol className="space-y-3 border-l border-slate-200 pl-4">
+          {(data.activities || []).map((activity, idx) => (
+            <li key={idx}>
+              <p className="text-sm font-medium text-slate-900">{activity.activity || activity.status}</p>
+              <p className="text-xs text-slate-500">
+                {activity.location} {activity.date ? `• ${activity.date}` : ''}
+              </p>
+            </li>
+          ))}
         </ol>
       </div>
     </div>

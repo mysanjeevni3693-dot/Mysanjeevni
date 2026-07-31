@@ -7,7 +7,7 @@ import { User } from '@/lib/models/User';
 import { Product } from '@/lib/models/Product';
 import { Address } from '@/lib/models/Address';
 import { Vendor } from '@/lib/models/Vendor';
-import { createShiprocketOrder, generateAWB, getShippingRates, trackShipment } from '@/lib/shiprocket';
+import { getShippingRates, trackShipment } from '@/lib/shiprocket';
 
 const keyId = process.env.RAZORPAY_KEY_ID;
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
@@ -448,13 +448,9 @@ export async function PUT(request: NextRequest) {
         console.error('Vendor earnings update failed (non-fatal):', earnErr);
       }
 
-      if (status === 'shipped') {
-        try {
-          await createShiprocketShipment(order);
-        } catch (shippingError: any) {
-          console.error('Shipping creation error:', shippingError?.message || shippingError);
-        }
-      }
+      // Shipment / AWB are created automatically on order place (and via
+      // Admin → Shipments → Auto-fulfill). Status changes must not create
+      // a second Shiprocket order.
 
       return NextResponse.json(
         { message: 'Order status updated successfully', order },
@@ -519,87 +515,3 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-async function createShiprocketShipment(order: any) {
-  try {
-    // Populate order with delivery address and user
-    await order.populate('deliveryAddress');
-    await order.populate('userId');
-
-    // Get vendor from first product (assuming single vendor for simplicity)
-    const firstProductId = order.items[0].productId;
-    const product = await Product.findById(firstProductId).populate('vendorId');
-    if (!product || !product.vendorId) {
-      throw new Error('Vendor not found for product');
-    }
-    const vendor = product.vendorId;
-
-    // Prepare order data for Shiprocket
-    const orderData = {
-      order_id: order._id.toString(),
-      order_date: order.createdAt.toISOString().split('T')[0],
-      pickup_location: 'Main Warehouse', // Default pickup location name
-      channel_id: process.env.SHIPROCKET_CHANNEL_ID || '',
-      comment: order.orderNotes || '',
-      billing_customer_name: order.userId.fullName.split(' ')[0],
-      billing_last_name: order.userId.fullName.split(' ').slice(1).join(' ') || '',
-      billing_address: order.deliveryAddress.addressLine1,
-      billing_address_2: order.deliveryAddress.addressLine2 || '',
-      billing_city: order.deliveryAddress.city,
-      billing_pincode: order.deliveryAddress.pincode,
-      billing_state: order.deliveryAddress.state,
-      billing_country: order.deliveryAddress.country,
-      billing_email: order.userId.email,
-      billing_phone: order.userId.phone,
-      shipping_is_billing: true,
-      shipping_customer_name: order.deliveryAddress.fullName.split(' ')[0],
-      shipping_last_name: order.deliveryAddress.fullName.split(' ').slice(1).join(' ') || '',
-      shipping_address: order.deliveryAddress.addressLine1,
-      shipping_address_2: order.deliveryAddress.addressLine2 || '',
-      shipping_city: order.deliveryAddress.city,
-      shipping_pincode: order.deliveryAddress.pincode,
-      shipping_state: order.deliveryAddress.state,
-      shipping_country: order.deliveryAddress.country,
-      shipping_email: order.userId.email,
-      shipping_phone: order.deliveryAddress.phone,
-      order_items: order.items.map((item: any) => ({
-        name: item.productName,
-        sku: item.productId,
-        units: item.quantity,
-        selling_price: item.price,
-        discount: 0,
-        tax: 0,
-        hsn: '', // Need to add HSN to product model if required
-      })),
-      payment_method: 'Prepaid', // Since payment is already done
-      shipping_charges: order.shippingCharge || 0,
-      giftwrap_charges: 0,
-      transaction_charges: 0,
-      total_discount: 0,
-      sub_total: order.totalPrice - (order.shippingCharge || 0),
-      length: 10, // Default dimensions, should be from product
-      breadth: 10,
-      height: 10,
-      weight: 0.5, // Default weight
-    };
-
-    // Create Shiprocket order
-    const shiprocketResponse = await createShiprocketOrder(orderData);
-
-    // Update order with Shiprocket details
-    order.shiprocketOrderId = shiprocketResponse.order_id;
-    order.shiprocketShipmentId = shiprocketResponse.shipment_id;
-    await order.save();
-
-    // Generate AWB
-    if (order.shiprocketShipmentId) {
-      const awbResponse = await generateAWB(order.shiprocketShipmentId);
-      order.awbNumber = awbResponse.awb_code || awbResponse.awb_assign_response?.awb_code;
-      await order.save();
-    }
-
-    console.log('Shiprocket shipment created successfully for order:', order._id);
-  } catch (error: any) {
-    console.error('Error creating Shiprocket shipment:', error?.message || error);
-    throw error;
-  }
-}

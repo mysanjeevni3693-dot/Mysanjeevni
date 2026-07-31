@@ -71,6 +71,10 @@ const orderSchema = new mongoose.Schema(
     labelUrl: String,
     invoiceUrl: String,
     manifestUrl: String,
+    /** Last auto-fulfilment error (create/awb/pickup/label/invoice). */
+    shiprocketLastError: String,
+    /** Last completed or failed pipeline step. */
+    shiprocketPipelineStep: String,
     // ---------------------------------------------------------------------
     // Shiprocket Checkout (SRC) fields (additive). Populated when an order is
     // placed via the hosted Shiprocket Checkout widget instead of native pay.

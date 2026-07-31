@@ -5,16 +5,20 @@ import Footer from '@/components/Footer';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface Order {
+interface TrackOrder {
   id: string;
-  userId: string;
+  userId?: string;
   items: Array<{ name: string; quantity: number; price: number }>;
   totalAmount: number;
-  status: 'confirmed' | 'processing' | 'shipped' | 'delivered' | string;
+  status: string;
   createdAt: string;
+  awbNumber?: string;
+  courierName?: string;
+  shipmentStatus?: string;
+  paymentMethod?: string;
 }
 
-const steps = ['confirmed', 'processing', 'shipped', 'delivered'];
+const steps = ['pending', 'confirmed', 'processing', 'shipped', 'delivered'];
 
 /** Normalized live tracking shape returned by /api/shiprocket/track. */
 interface LiveTracking {
@@ -26,17 +30,53 @@ interface LiveTracking {
   activities: Array<{ date: string; status: string; activity: string; location: string }>;
 }
 
+function getOrderId(order: any): string {
+  return String(order?._id || order?.id || order?.dbOrderId || order?.orderId || '').trim();
+}
+
+function normalizeLocalOrder(raw: any): TrackOrder | null {
+  const id = getOrderId(raw);
+  if (!id) return null;
+
+  const items = Array.isArray(raw?.items)
+    ? raw.items.map((item: any) => ({
+        name: String(item?.productName || item?.name || 'Item'),
+        quantity: Number(item?.quantity || 0) || 0,
+        price: Number(item?.price || 0) || 0,
+      }))
+    : [];
+
+  return {
+    id,
+    userId: raw?.userId ? String(raw.userId) : undefined,
+    items,
+    totalAmount: Number(raw?.totalAmount ?? raw?.totalPrice ?? 0) || 0,
+    status: String(raw?.status || 'pending').toLowerCase(),
+    createdAt: raw?.createdAt || new Date().toISOString(),
+    awbNumber: raw?.awbNumber || '',
+    courierName: raw?.courierName || '',
+    shipmentStatus: raw?.shipmentStatus || '',
+    paymentMethod: raw?.paymentMethod || '',
+  };
+}
+
+function mapStatusToStep(status: string): number {
+  const normalized = String(status || 'pending').toLowerCase();
+  if (normalized === 'cancelled' || normalized === 'canceled') return 0;
+  if (normalized === 'pickup_scheduled' || normalized === 'ready_to_ship') {
+    return steps.indexOf('processing');
+  }
+  const idx = steps.indexOf(normalized);
+  return idx >= 0 ? idx : 0;
+}
+
 export default function TrackPage() {
   const router = useRouter();
-  const [queryOrderId, setQueryOrderId] = useState('');
   const [orderIdInput, setOrderIdInput] = useState('');
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  const [activeOrder, setActiveOrder] = useState<TrackOrder | null>(null);
   const [message, setMessage] = useState('');
+  const [loadingOrder, setLoadingOrder] = useState(false);
 
-  // Live courier tracking (Shiprocket) by AWB. Additive to the local timeline.
-  // Prefill the AWB from the URL (?awb=) using a lazy initializer so we avoid
-  // any setState-in-effect for the initial value.
   const [awbInput, setAwbInput] = useState(() => {
     if (typeof window === 'undefined') return '';
     return (new URLSearchParams(window.location.search).get('awb') || '').trim();
@@ -45,7 +85,6 @@ export default function TrackPage() {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState('');
 
-  /** Fetches live shipment tracking from the server-side Shiprocket route. */
   const trackLive = async (awb: string) => {
     const value = awb.trim();
     if (!value) {
@@ -56,7 +95,9 @@ export default function TrackPage() {
     setLiveError('');
     setLiveTracking(null);
     try {
-      const res = await fetch(`/api/shiprocket/track?awb=${encodeURIComponent(value)}`, { cache: 'no-store' });
+      const res = await fetch(`/api/shiprocket/track?awb=${encodeURIComponent(value)}`, {
+        cache: 'no-store',
+      });
       const data = await res.json();
       if (!res.ok || !data?.success) {
         throw new Error(data?.error?.message || 'Unable to fetch tracking details.');
@@ -69,57 +110,89 @@ export default function TrackPage() {
     }
   };
 
-  // Auto-track once on mount when an AWB is supplied via the URL (?awb=).
-  // Wrapped in an async runner so no setState happens synchronously in the body.
-  useEffect(() => {
-    if (!awbInput) return;
-    const run = async () => {
-      await trackLive(awbInput);
-    };
-    void run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const value = new URLSearchParams(window.location.search).get('orderId');
-    setQueryOrderId((value || '').trim());
-  }, []);
-
-  useEffect(() => {
-    const raw = localStorage.getItem('orders') || '[]';
-    const parsed: Order[] = JSON.parse(raw);
-    setOrders(parsed);
-
-    if (queryOrderId) {
-      setOrderIdInput(queryOrderId);
-      const found = parsed.find((o) => o.id.toLowerCase() === queryOrderId.toLowerCase());
-      if (found) setActiveOrder(found);
-    }
-  }, [queryOrderId]);
-
-  const currentStep = useMemo(() => {
-    if (!activeOrder) return -1;
-    return Math.max(steps.indexOf(activeOrder.status), 0);
-  }, [activeOrder]);
-
-  const handleTrack = () => {
-    const target = orderIdInput.trim().toLowerCase();
+  const loadOrderById = async (orderId: string) => {
+    const target = orderId.trim();
     if (!target) {
       setMessage('Please enter an order ID.');
       setActiveOrder(null);
       return;
     }
 
-    const found = orders.find((o) => o.id.toLowerCase() === target);
-    if (!found) {
-      setMessage('Order not found. Please check ID and try again.');
-      setActiveOrder(null);
-      return;
-    }
-
+    setLoadingOrder(true);
     setMessage('');
-    setActiveOrder(found);
+    setActiveOrder(null);
+
+    try {
+      // Prefer database (source of truth).
+      const res = await fetch(`/api/orders/track?orderId=${encodeURIComponent(target)}`, {
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (res.ok && data?.success && data?.order) {
+        const order = normalizeLocalOrder(data.order);
+        if (order) {
+          setActiveOrder(order);
+          if (order.awbNumber) {
+            setAwbInput(order.awbNumber);
+            void trackLive(order.awbNumber);
+          }
+          if (data.trackingError) {
+            setLiveError(String(data.trackingError));
+          }
+          return;
+        }
+      }
+
+      // Fallback: localStorage cache from My Orders (supports _id / id / dbOrderId).
+      try {
+        const raw = localStorage.getItem('orders') || '[]';
+        const parsed = JSON.parse(raw);
+        const list = Array.isArray(parsed)
+          ? parsed.map(normalizeLocalOrder).filter(Boolean) as TrackOrder[]
+          : [];
+        const found = list.find((o) => o.id.toLowerCase() === target.toLowerCase());
+        if (found) {
+          setActiveOrder(found);
+          if (found.awbNumber) {
+            setAwbInput(found.awbNumber);
+            void trackLive(found.awbNumber);
+          }
+          return;
+        }
+      } catch {
+        // ignore local parse errors
+      }
+
+      setMessage(
+        data?.error?.message ||
+          'Order not found. Please check the ID and try again.'
+      );
+    } catch {
+      setMessage('Unable to load order details. Please try again.');
+    } finally {
+      setLoadingOrder(false);
+    }
   };
+
+  useEffect(() => {
+    if (!awbInput) return;
+    void trackLive(awbInput);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const value = (new URLSearchParams(window.location.search).get('orderId') || '').trim();
+    if (value) {
+      setOrderIdInput(value);
+      void loadOrderById(value);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const currentStep = useMemo(() => {
+    if (!activeOrder) return -1;
+    return mapStatusToStep(activeOrder.status);
+  }, [activeOrder]);
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -145,27 +218,27 @@ export default function TrackPage() {
               <input
                 value={orderIdInput}
                 onChange={(e) => setOrderIdInput(e.target.value)}
-                placeholder="Enter Order ID (example: ord_12345)"
+                placeholder="Enter Order ID"
                 className="flex-1 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
               <button
-                onClick={handleTrack}
-                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-3 transition"
+                onClick={() => loadOrderById(orderIdInput)}
+                disabled={loadingOrder}
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-bold px-5 py-3 transition"
               >
-                Track Order
+                {loadingOrder ? 'Loading…' : 'Track Order'}
               </button>
             </div>
 
             {message && <p className="mt-3 text-sm text-orange-500 font-medium">{message}</p>}
 
-            {!activeOrder && (
+            {!activeOrder && !loadingOrder && (
               <div className="mt-6 rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-slate-700">
                 Tip: You can also open tracking from My Orders for a pre-filled order ID.
               </div>
             )}
           </div>
 
-          {/* Live courier tracking by AWB (Shiprocket) */}
           <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
             <h3 className="text-lg font-bold text-emerald-700">Live Courier Tracking</h3>
             <p className="text-sm text-slate-600 mt-1">
@@ -211,7 +284,7 @@ export default function TrackPage() {
                 </div>
 
                 <ol className="relative border-l border-emerald-200 pl-4 mt-5 space-y-4">
-                  {liveTracking.activities.length === 0 ? (
+                  {!Array.isArray(liveTracking.activities) || liveTracking.activities.length === 0 ? (
                     <li className="text-sm text-slate-500">No tracking activity yet.</li>
                   ) : (
                     liveTracking.activities.map((activity, idx) => (
@@ -238,16 +311,33 @@ export default function TrackPage() {
                   <p className="text-xs uppercase tracking-wide text-orange-500 font-semibold">Order Details</p>
                   <h2 className="mt-1 text-2xl font-black text-emerald-700">#{activeOrder.id.toUpperCase()}</h2>
                   <p className="text-sm text-slate-600 mt-1">
-                    Placed on {new Date(activeOrder.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    Placed on{' '}
+                    {new Date(activeOrder.createdAt).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
                   </p>
+                  <p className="text-sm text-slate-600 mt-1 capitalize">
+                    Status: <span className="font-semibold text-emerald-700">{activeOrder.status || 'pending'}</span>
+                    {activeOrder.paymentMethod ? ` · ${activeOrder.paymentMethod.toUpperCase()}` : ''}
+                  </p>
+                  {(activeOrder.courierName || activeOrder.awbNumber) && (
+                    <p className="text-sm text-slate-600 mt-1">
+                      {activeOrder.courierName ? `${activeOrder.courierName} · ` : ''}
+                      {activeOrder.awbNumber ? `AWB ${activeOrder.awbNumber}` : 'AWB pending'}
+                    </p>
+                  )}
                 </div>
                 <div className="text-left md:text-right">
                   <p className="text-xs text-slate-500">Order Total</p>
-                  <p className="text-2xl font-black text-emerald-700">₹{activeOrder.totalAmount.toFixed(2)}</p>
+                  <p className="text-2xl font-black text-emerald-700">
+                    ₹{Number(activeOrder.totalAmount || 0).toFixed(2)}
+                  </p>
                 </div>
               </div>
 
-              <div className="mt-6 grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div className="mt-6 grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {steps.map((step, idx) => {
                   const completed = idx <= currentStep;
                   return (
@@ -268,14 +358,29 @@ export default function TrackPage() {
               <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
                 <h3 className="font-bold text-emerald-700 mb-3">Order Items</h3>
                 <div className="space-y-2">
-                  {activeOrder.items.map((item, index) => (
-                    <div key={`${item.name}-${index}`} className="flex items-center justify-between text-sm">
-                      <p className="text-slate-700">{item.name} x {item.quantity}</p>
-                      <p className="font-semibold text-slate-900">₹{(item.price * item.quantity).toFixed(2)}</p>
-                    </div>
-                  ))}
+                  {activeOrder.items.length === 0 ? (
+                    <p className="text-sm text-slate-500">No line items available.</p>
+                  ) : (
+                    activeOrder.items.map((item, index) => (
+                      <div key={`${item.name}-${index}`} className="flex items-center justify-between text-sm">
+                        <p className="text-slate-700">
+                          {item.name} x {item.quantity}
+                        </p>
+                        <p className="font-semibold text-slate-900">
+                          ₹{(Number(item.price || 0) * Number(item.quantity || 0)).toFixed(2)}
+                        </p>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
+
+              {String(activeOrder.status).toLowerCase() === 'pending' && !activeOrder.awbNumber && (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Your order is confirmed in our system and awaiting packing/shipping.
+                  Courier tracking will appear here once an AWB is assigned.
+                </div>
+              )}
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <button

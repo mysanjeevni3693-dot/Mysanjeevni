@@ -23,10 +23,13 @@ export interface OrderDocument {
     productName?: string;
     quantity?: number;
     price?: number;
+    status?: string;
   }>;
   totalPrice?: number;
   shippingCharge?: number;
   paymentStatus?: string;
+  paymentMethod?: string;
+  status?: string;
   orderNotes?: string;
   createdAt?: Date;
   deliveryAddress?: unknown;
@@ -43,6 +46,8 @@ export interface OrderDocument {
   labelUrl?: string;
   invoiceUrl?: string;
   manifestUrl?: string;
+  shiprocketLastError?: string;
+  shiprocketPipelineStep?: string;
   save: () => Promise<unknown>;
   populate: (path: string, select?: string) => Promise<OrderDocument>;
 }
@@ -102,10 +107,36 @@ export async function buildCreateOrderInput(order: OrderDocument): Promise<Creat
     throw new ShiprocketError('Delivery address is incomplete for shipping', 'VALIDATION_ERROR', 422);
   }
 
+  const pincode = String(address.pincode || '').replace(/\D/g, '');
+  if (pincode.length !== 6) {
+    throw new ShiprocketError(
+      'Delivery pincode must be a valid 6-digit Indian PIN for Shiprocket',
+      'VALIDATION_ERROR',
+      422
+    );
+  }
+
+  const rawPhone = String(address.phone || user?.phone || '').replace(/\D/g, '');
+  const phone = rawPhone.length > 10 ? rawPhone.slice(-10) : rawPhone;
+  if (phone.length < 10) {
+    throw new ShiprocketError(
+      'A valid 10-digit delivery phone is required for Shiprocket',
+      'VALIDATION_ERROR',
+      422
+    );
+  }
+
   const name = splitName(address.fullName || user?.fullName || 'Customer');
   const shippingCharge = Number(order.shippingCharge || 0);
   const subTotal = Math.max(0, Number(order.totalPrice || 0) - shippingCharge);
-  const paymentMethod = order.paymentStatus === 'completed' ? 'Prepaid' : 'COD';
+
+  // COD when checkout method is COD, or payment is not yet completed (pending COD).
+  const method = String(order.paymentMethod || '').toLowerCase();
+  const isCod =
+    method === 'cod' ||
+    method.includes('cash') ||
+    String(order.paymentStatus || '').toLowerCase() !== 'completed';
+  const paymentMethod = isCod ? 'COD' : 'Prepaid';
 
   const items = (order.items ?? []).map((item) => ({
     name: item.productName || 'Item',
@@ -129,9 +160,9 @@ export async function buildCreateOrderInput(order: OrderDocument): Promise<Creat
       city: address.city,
       state: address.state,
       country: address.country || 'India',
-      pincode: address.pincode,
+      pincode,
       email: user?.email || 'orders@mysanjeevani.com',
-      phone: address.phone || user?.phone || '',
+      phone,
     },
     items,
     subTotal,

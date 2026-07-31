@@ -185,7 +185,8 @@ export default function CartPage() {
   const cartLooksInternational = cartItems.some(
     (item) => item?.currency === 'USD' || item?.currencySymbol === '$'
   );
-  const isIndia = isIndiaCountry(selectedCountry) && !cartLooksInternational;
+  const isInternational = !isIndiaCountry(selectedCountry) || cartLooksInternational;
+  const isIndia = !isInternational;
   const currencySymbol = isIndia ? '₹' : '$';
   const effectivePrice = (item?: CartItem) => item ? Number(item.displayPrice ?? item.price) || 0 : 0;
   const totalPrice = cartItems.reduce((sum, item) => sum + effectivePrice(item) * (item?.quantity || 0), 0);
@@ -199,6 +200,13 @@ export default function CartPage() {
   });
   const deliveryCharge = isIndia ? flatIndiaShipping : 0;
   const totalAmount = finalPrice + deliveryCharge;
+
+  // International / USD carts never use India SMS OTP.
+  useEffect(() => {
+    if (!isInternational) return;
+    setIsOTPVerified(true);
+    setShowOTPModal(false);
+  }, [isInternational]);
 
   const getStoredCountry = () => {
     const fromLocalStorage = localStorage.getItem('preferredCountry');
@@ -584,19 +592,59 @@ export default function CartPage() {
       return;
     }
 
-    // Pandeyra SMS OTP is India/DLT-only. International checkout uses PayPal,
-    // so skip phone OTP for non-India carts.
-    if (!isIndia) {
+    // Pandeyra SMS OTP is India/DLT-only. International checkout uses PayPal.
+    if (isInternational) {
+      setSelectedPaymentMethod('paypal');
       setIsOTPVerified(true);
+      setShowOTPModal(false);
       setShowAddressForm(true);
       return;
     }
 
-    // First check if OTP is verified
+    // India only: require phone OTP before address/payment.
     if (!isOTPVerified) {
       setShowOTPModal(true);
       return;
     }
+    setShowAddressForm(true);
+  };
+
+  /** International Fast Checkout → address + PayPal. Never opens OTP. */
+  const startInternationalFastCheckout = () => {
+    if (!user) {
+      alert('Please login first');
+      router.push('/login');
+      return;
+    }
+    if (cartItems.length === 0) {
+      alert('Your cart is empty');
+      return;
+    }
+
+    const missingPrescriptions = getMissingPrescriptions(
+      cartItems.map((item) => ({
+        productId: String(item.productId || item.id),
+        productName: item.productName || item.name,
+        requiresPrescription: item.requiresPrescription || false,
+      }))
+    );
+    if (missingPrescriptions.length > 0) {
+      alert(
+        `Please upload prescriptions for the following products:\n${missingPrescriptions
+          .map((p) => `• ${p.productName}`)
+          .join('\n')}`
+      );
+      return;
+    }
+
+    setSelectedPaymentMethod('paypal');
+    setIsOTPVerified(true);
+    setShowOTPModal(false);
+    setShowPaymentModal(false);
+    setAddress((prev) => ({
+      ...prev,
+      country: prev.country === 'India' ? 'Other' : prev.country || 'Other',
+    }));
     setShowAddressForm(true);
   };
 
@@ -631,7 +679,7 @@ export default function CartPage() {
           paymentMethod: 'cod',
           paymentGateway: 'cod',
           deliveryAddress: address,
-          status: 'pending',
+          status: dbResult.awbNumber ? 'confirmed' : 'pending',
           paymentStatus: 'pending',
           awbNumber: dbResult.awbNumber || '',
           courierName: dbResult.courierName || '',
@@ -648,7 +696,11 @@ export default function CartPage() {
         setShowPaymentModal(false);
         setSelectedPaymentMethod('');
 
-        alert(`Order placed with Cash on Delivery!\n\nOrder ID: ${order._id}`);
+        alert(
+          dbResult.awbNumber
+            ? `Order placed with Cash on Delivery!\n\nOrder ID: ${order._id}\nAWB: ${dbResult.awbNumber}`
+            : `Order placed with Cash on Delivery!\n\nOrder ID: ${order._id}`
+        );
         router.push('/orders');
       } catch (error: any) {
         alert(error?.message || 'Failed to place order. Please try again.');
@@ -924,6 +976,7 @@ export default function CartPage() {
     const prescriptions = getAllPrescriptions();
     const payload = {
       userId: user.id,
+      customerEmail: String(user.email || '').trim(),
       items: cartItems
         .filter((item) => item)
         .map((item) => ({
@@ -977,12 +1030,9 @@ export default function CartPage() {
       return;
     }
 
-    // Shiprocket / Fastrr Checkout is INR-only. International Fast Checkout stays
-    // in USD via address + PayPal (no India SMS OTP).
-    if (!isIndia) {
-      setSelectedPaymentMethod('paypal');
-      setIsOTPVerified(true);
-      setShowAddressForm(true);
+    // USD / non-India: never use Shiprocket or India OTP — PayPal Fast Checkout only.
+    if (isInternational) {
+      startInternationalFastCheckout();
       return;
     }
 
@@ -1259,26 +1309,18 @@ export default function CartPage() {
                     </div>
                   )}
 
-                  {/* International: Fast Checkout (PayPal) first so it is never missed. */}
-                  {!isIndia && (
+                  {/* International: Fast Checkout (PayPal) first — no OTP. */}
+                  {isInternational && (
                     <>
                       <button
                         type="button"
-                        onClick={handleShiprocketCheckout}
-                        disabled={srcBusy}
-                        className="w-full bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2"
+                        onClick={startInternationalFastCheckout}
+                        className="w-full bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2"
                       >
-                        {srcBusy ? (
-                          <>
-                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                            Starting…
-                          </>
-                        ) : (
-                          '⚡ Fast Checkout (PayPal · USD)'
-                        )}
+                        ⚡ Fast Checkout (PayPal · USD)
                       </button>
                       <p className="mt-2 mb-4 text-[11px] text-gray-400 text-center">
-                        International carts stay in USD — paid securely with PayPal
+                        No OTP required — enter address and pay securely with PayPal
                       </p>
                       <div className="flex items-center gap-3 mb-4">
                         <span className="h-px flex-1 bg-gray-200" />
@@ -1292,7 +1334,7 @@ export default function CartPage() {
                     onClick={handleBuyNow}
                     className="w-full bg-linear-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white py-3 rounded-lg font-bold transition"
                   >
-                    {!isIndia
+                    {isInternational
                       ? '💳 Buy Now (PayPal)'
                       : isOTPVerified
                         ? '💳 Buy Now'
@@ -1605,9 +1647,9 @@ export default function CartPage() {
         </div>
       )}
 
-      {/* OTP VERIFICATION MODAL */}
+      {/* OTP is India-only (Pandeyra/DLT). Never show for international / USD carts. */}
       <OTPVerificationModal
-        isOpen={showOTPModal}
+        isOpen={showOTPModal && isIndia}
         userPhone={user?.phone || ''}
         onVerifySuccess={() => {
           setIsOTPVerified(true);
