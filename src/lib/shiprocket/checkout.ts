@@ -14,11 +14,12 @@ import crypto from 'crypto';
 import { shiprocketCheckoutConfig, hasShiprocketCheckoutCredentials } from './config';
 import { ShiprocketError, mapStatusToErrorCode } from './errors';
 import { shiprocketLogger } from './logger';
-import type {
-  CheckoutAddress,
-  CheckoutOrder,
-  CheckoutTokenInput,
-  CheckoutTokenResult,
+import {
+  CHECKOUT_DELIVERY_VARIANT_ID,
+  type CheckoutAddress,
+  type CheckoutOrder,
+  type CheckoutTokenInput,
+  type CheckoutTokenResult,
 } from './types';
 
 /**
@@ -106,26 +107,84 @@ export async function createCheckoutToken(
 ): Promise<CheckoutTokenResult> {
   shiprocketLogger.info('order', 'Creating checkout access token', { items: input.items.length });
 
-  const currency = (input.currency || 'INR').toUpperCase();
+  // Fastrr / Shiprocket Checkout is INR-denominated. Never forward USD amounts
+  // as-is (that surfaces as "$16 cart → ₹16 checkout"). Convert USD → INR when
+  // a non-INR currency slips through, then lock the token to INR.
+  let currency = 'INR';
+  let priceMultiplier = 1;
+  const requestedCurrency = (input.currency || 'INR').toUpperCase();
+  if (requestedCurrency !== 'INR') {
+    try {
+      const { getExchangeRate } = await import('@/lib/currencyUtils');
+      const inrToUsd = await getExchangeRate();
+      priceMultiplier = inrToUsd > 0 ? 1 / inrToUsd : 1 / 0.012;
+      shiprocketLogger.warn('order', 'Converting non-INR cart to INR for Shiprocket Checkout', {
+        requestedCurrency,
+        priceMultiplier,
+      });
+    } catch {
+      priceMultiplier = 1 / 0.012;
+    }
+  }
+
+  const toInr = (amount: number) =>
+    Math.round(Math.max(0, Number(amount) || 0) * priceMultiplier * 100) / 100;
+
+  const shippingCharges = toInr(input.shippingCharges || 0);
+  const couponAmount = input.coupon ? toInr(input.coupon.amount) : 0;
+
+  // Build line items. When we have a delivery charge, also inject it as a
+  // catalog line item — Shiprocket's hosted UI often ignores cart-level
+  // shipping_charges when the dashboard is set to "free shipping", but it
+  // always includes priced catalog items in the payable total.
+  const items = input.items.map((item) => ({
+    variant_id: item.variantId,
+    quantity: item.quantity,
+    catalog_data: {
+      price: toInr(item.price),
+      name: item.name,
+      // Shiprocket rejects a blank image_url, so fall back to a placeholder.
+      image_url: item.imageUrl || shiprocketCheckoutConfig.placeholderImage,
+      currency,
+    },
+  }));
+
+  if (shippingCharges > 0) {
+    items.push({
+      variant_id: CHECKOUT_DELIVERY_VARIANT_ID,
+      quantity: 1,
+      catalog_data: {
+        price: shippingCharges,
+        name: 'Delivery Charges',
+        image_url: shiprocketCheckoutConfig.placeholderImage,
+        currency,
+      },
+    });
+  }
 
   const body = {
+    // Top-level currency for clients that read it outside cart_data.
+    currency,
+    currency_code: currency,
     cart_data: {
-      items: input.items.map((item) => ({
-        variant_id: item.variantId,
-        quantity: item.quantity,
-        catalog_data: {
-          price: item.price,
-          name: item.name,
-          // Shiprocket rejects a blank image_url, so fall back to a placeholder.
-          image_url: item.imageUrl || shiprocketCheckoutConfig.placeholderImage,
-          currency,
-        },
-      })),
-      ...(input.coupon
-        ? { cart_discount: { coupon_code: input.coupon.code, amount: input.coupon.amount } }
+      items,
+      // Also send the canonical shipping field for dashboards that honor it.
+      shipping_charges: shippingCharges,
+      ...(shippingCharges > 0
+        ? {
+            shipping_method: {
+              title: 'Delivery Charges',
+              amount: shippingCharges,
+              price: shippingCharges,
+            },
+          }
+        : {}),
+      ...(input.coupon && couponAmount > 0
+        ? { cart_discount: { coupon_code: input.coupon.code, amount: couponAmount } }
         : {}),
       ...(input.customAttributes ? { custom_attributes: input.customAttributes } : {}),
       currency,
+      currency_code: currency,
       mobile_app: false,
     },
     redirect_url: redirectUrl,
@@ -221,24 +280,33 @@ export function verifyCheckoutWebhook(rawBody: string, hmacHeader: string | null
  * Normalizes a raw SRC order object (webhook payload or order-details response).
  */
 export function parseCheckoutOrder(raw: Record<string, unknown>): CheckoutOrder {
-  const items = Array.isArray(raw.cart_data)
-    ? []
-    : Array.isArray((raw.cart_data as Record<string, unknown> | undefined)?.items)
-      ? ((raw.cart_data as { items: Array<Record<string, unknown>> }).items).map((item) => ({
-          variantId: String(item.variant_id ?? ''),
-          quantity: Number(item.quantity ?? 0),
-        }))
-      : [];
-
-  const payments = Array.isArray(raw.payments) ? (raw.payments as Array<Record<string, unknown>>) : [];
-  const firstPayment = payments[0] ?? {};
-
   // custom_attributes we set at token creation may come back top-level or nested
   // under cart_data depending on the SRC payload (webhook vs order-details).
   const cartData = (raw.cart_data && typeof raw.cart_data === 'object' ? raw.cart_data : {}) as Record<
     string,
     unknown
   >;
+
+  const items = Array.isArray(raw.cart_data)
+    ? []
+    : Array.isArray(cartData.items)
+      ? (cartData.items as Array<Record<string, unknown>>).map((item) => {
+          const catalog =
+            item.catalog_data && typeof item.catalog_data === 'object'
+              ? (item.catalog_data as Record<string, unknown>)
+              : {};
+          return {
+            variantId: String(item.variant_id ?? ''),
+            quantity: Number(item.quantity ?? 0),
+            price: Number(item.price ?? catalog.price ?? 0) || 0,
+            name: String(item.name ?? catalog.name ?? ''),
+          };
+        })
+      : [];
+
+  const payments = Array.isArray(raw.payments) ? (raw.payments as Array<Record<string, unknown>>) : [];
+  const firstPayment = payments[0] ?? {};
+
   const customAttributes = ((raw.custom_attributes ?? cartData.custom_attributes) || {}) as Record<
     string,
     unknown
@@ -246,6 +314,15 @@ export function parseCheckoutOrder(raw: Record<string, unknown>): CheckoutOrder 
   const customUserId = String(
     customAttributes.user_id ?? customAttributes.userId ?? ''
   );
+
+  // Prefer Shiprocket's shipping_charges; fall back to our injected delivery line
+  // item when the hosted checkout treated shipping as a catalog product.
+  const deliveryLine = items.find((item) => item.variantId === CHECKOUT_DELIVERY_VARIANT_ID);
+  const shippingFromLine = deliveryLine
+    ? (Number(deliveryLine.price) || 0) * Math.max(1, Number(deliveryLine.quantity) || 1)
+    : 0;
+  const shippingCharges =
+    Number(raw.shipping_charges ?? cartData.shipping_charges ?? 0) || shippingFromLine || 0;
 
   return {
     orderId: String(raw.order_id ?? raw.platform_order_id ?? ''),
@@ -261,7 +338,7 @@ export function parseCheckoutOrder(raw: Record<string, unknown>): CheckoutOrder 
     email: String(raw.email ?? ''),
     subtotal: Number(raw.subtotal_price ?? 0) || 0,
     totalDiscount: Number(raw.total_discount ?? 0) || 0,
-    shippingCharges: Number(raw.shipping_charges ?? 0) || 0,
+    shippingCharges,
     codCharges: Number(raw.cod_charges ?? 0) || 0,
     totalPayable: Number(raw.total_amount_payable ?? 0) || 0,
     estimatedDelivery: String(raw.edd ?? ''),

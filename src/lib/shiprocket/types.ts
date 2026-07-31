@@ -288,6 +288,11 @@ export const checkoutTokenSchema = z.object({
     .min(1),
   /** Cart currency — INR for India, USD (etc.) for international. */
   currency: z.string().trim().min(3).max(3).optional(),
+  /**
+   * Flat delivery charge from our cart (Delhi NCR ₹50 / rest of India ₹79 /
+   * international ₹0). Forwarded into Shiprocket Checkout so totals match.
+   */
+  shippingCharges: z.number().nonnegative().optional().default(0),
   /** Optional fixed cart discount / coupon. */
   coupon: z
     .object({
@@ -298,6 +303,9 @@ export const checkoutTokenSchema = z.object({
   /** Optional custom attributes echoed back on the order. */
   customAttributes: z.record(z.string(), z.string()).optional(),
 });
+
+/** Reserved variant id used to inject delivery as a Fast Checkout line item. */
+export const CHECKOUT_DELIVERY_VARIANT_ID = 'mysanjeevni-delivery-charge';
 
 export type CheckoutTokenInput = z.infer<typeof checkoutTokenSchema>;
 
@@ -343,7 +351,7 @@ export interface CheckoutOrder {
   totalPayable: number;
   estimatedDelivery: string;
   createdDate: string;
-  items: Array<{ variantId: string; quantity: number }>;
+  items: Array<{ variantId: string; quantity: number; price?: number; name?: string }>;
   shippingAddress: CheckoutAddress | null;
   billingAddress: CheckoutAddress | null;
   /** Our signed-in user id, stamped via custom_attributes at token creation. */

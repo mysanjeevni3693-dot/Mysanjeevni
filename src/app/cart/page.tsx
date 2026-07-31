@@ -946,6 +946,14 @@ export default function CartPage() {
       return;
     }
 
+    // Shiprocket / Fastrr Checkout is INR-only (COD/UPI, ₹ UI). Opening it with a
+    // USD cart shows the same number as rupees (e.g. $16 → ₹16). Keep international
+    // checkouts in USD via the Buy Now → PayPal flow instead.
+    if (!isIndia) {
+      handleBuyNow();
+      return;
+    }
+
     setSrcBusy(true);
     try {
       const items = cartItems
@@ -958,27 +966,27 @@ export default function CartPage() {
           imageUrl: isImageUrl(item.image) ? (item.image as string) : '',
         }));
 
-      // Stamp the signed-in user id + preferred market onto the order so the
-      // webhook can attribute it correctly even if the customer enters a
-      // different phone/email inside the hosted checkout.
-      const checkoutCurrency = isIndia ? 'INR' : 'USD';
+      // Stamp the signed-in user id onto the order so the webhook can attribute
+      // it even if the customer enters a different phone/email in hosted checkout.
       const customAttributes: Record<string, string> = {
-        preferred_country: String(selectedCountry || (isIndia ? 'IN' : 'US')),
-        currency: checkoutCurrency,
+        preferred_country: 'IN',
+        currency: 'INR',
       };
       if (user?.id) customAttributes.user_id = String(user.id);
 
-      // Pass our cart-level discount to Shiprocket so the hosted checkout shows
-      // the same after-discount price as our own summary. Shipping is handled by
-      // Shiprocket's own checkout configuration (SR Checkout dashboard).
+      // Pass cart-level discount + the same delivery charge shown in Order Summary
+      // so Fast Checkout totals match the cart (Shiprocket dashboard free-shipping
+      // rules must not zero out our flat India rates).
       const coupon = discount > 0 ? { code: 'MYSANJEEVNI10', amount: discount } : undefined;
+      customAttributes.shipping_charges = String(deliveryCharge);
 
       const res = await fetch('/api/shiprocket/checkout/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items,
-          currency: checkoutCurrency,
+          currency: 'INR',
+          shippingCharges: deliveryCharge,
           ...(coupon ? { coupon } : {}),
           customAttributes,
         }),
@@ -1237,12 +1245,16 @@ export default function CartPage() {
                             <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                             Starting…
                           </>
-                        ) : (
+                        ) : isIndia ? (
                           '⚡ Fast Checkout (Shiprocket)'
+                        ) : (
+                          '⚡ Fast Checkout (PayPal · USD)'
                         )}
                       </button>
                       <p className="mt-2 text-[11px] text-gray-400 text-center">
-                        Address & payment handled securely by Shiprocket Checkout
+                        {isIndia
+                          ? 'Address & payment handled securely by Shiprocket Checkout'
+                          : 'International carts stay in USD — paid securely with PayPal'}
                       </p>
                     </>
                   )}

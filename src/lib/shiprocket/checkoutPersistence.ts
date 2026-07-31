@@ -19,7 +19,7 @@ import { Address } from '@/lib/models/Address';
 import { User } from '@/lib/models/User';
 import { Product } from '@/lib/models/Product';
 import { shiprocketLogger } from './logger';
-import type { CheckoutOrder } from './types';
+import { CHECKOUT_DELIVERY_VARIANT_ID, type CheckoutOrder } from './types';
 
 /** Maps SRC payment status text onto our order paymentStatus enum. */
 export function mapCheckoutPaymentStatus(status: string): 'pending' | 'completed' | 'failed' {
@@ -120,19 +120,26 @@ export async function persistCheckoutOrder(
   });
 
   // Enrich line items with product name/price/vendor from our catalog when possible.
+  // Skip the synthetic delivery line item — it is stored as shippingCharge instead.
+  const productLines = order.items.filter(
+    (item) => item.variantId && item.variantId !== CHECKOUT_DELIVERY_VARIANT_ID
+  );
   const items = await Promise.all(
-    order.items.map(async (item) => {
-      let name = `Item ${item.variantId}`;
-      let price = 0;
+    productLines.map(async (item) => {
+      let name = item.name || `Item ${item.variantId}`;
+      let price = Number(item.price ?? 0) || 0;
       let vendorId = '';
       let vendorName = '';
       try {
-        const product = await Product.findById(item.variantId).select('name price vendorId vendorName');
-        if (product) {
-          name = product.name || name;
-          price = Number(product.price ?? 0) || 0;
-          vendorId = product.vendorId ? String(product.vendorId) : '';
-          vendorName = product.vendorName || '';
+        if (mongoose.isValidObjectId(item.variantId)) {
+          const product = await Product.findById(item.variantId).select('name price vendorId vendorName');
+          if (product) {
+            name = product.name || name;
+            // Prefer catalog price only when SRC did not send one.
+            if (!price) price = Number(product.price ?? 0) || 0;
+            vendorId = product.vendorId ? String(product.vendorId) : '';
+            vendorName = product.vendorName || '';
+          }
         }
       } catch {
         // Non-fatal: keep placeholder values.
