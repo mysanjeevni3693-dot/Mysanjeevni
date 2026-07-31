@@ -250,7 +250,8 @@ export async function POST(request: NextRequest) {
 
     // Send order confirmation email via Resend (best-effort).
     try {
-      const customerEmail = String((user as any)?.email || '').trim();
+      const customer = await User.findById(input.userId).select('email fullName').lean();
+      const customerEmail = String((customer as any)?.email || '').trim();
       if (customerEmail) {
         const { sendOrderConfirmationEmail } = await import('@/lib/resend');
         const currencySymbol =
@@ -260,7 +261,7 @@ export async function POST(request: NextRequest) {
             : '$';
         await sendOrderConfirmationEmail({
           to: customerEmail,
-          customerName: input.deliveryAddress.fullName || (user as any)?.fullName || 'Customer',
+          customerName: input.deliveryAddress.fullName || (customer as any)?.fullName || 'Customer',
           orderId: String(order._id),
           totalAmount: input.totalAmount,
           currencySymbol,
