@@ -36,16 +36,102 @@ function validatePhoneNumber(phone: string): string {
   return normalized;
 }
 
-function getPandeyraCredentials(): { username: string; apiKey: string; senderId: string } {
+/**
+ * Pandeyra / DLT gateways expect Indian mobiles as 91XXXXXXXXXX.
+ * Keep longer international digit strings as-is (may still be rejected by DLT).
+ */
+function formatMobileForPandeyra(normalizedPhone: string): string {
+  const digits = String(normalizedPhone || '').replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  if (digits.length === 10 || (digits.length === 12 && digits.startsWith('91'))) {
+    return `91${last10}`;
+  }
+  if (digits.length === 11 && digits.startsWith('0')) {
+    return `91${digits.slice(1)}`;
+  }
+  return digits;
+}
+
+/** Pandeyra-style gateways often reply with plain text like `1701,success`. */
+function parsePandeyraResponse(raw: string): PandeyraResponse {
+  const text = String(raw || '').trim().replace(/^\uFEFF/, '');
+  if (!text) {
+    throw new Error('Empty response from Pandeyra SMS API');
+  }
+
+  // Try JSON first when it looks like an object/array.
+  if (text.startsWith('{') || text.startsWith('[')) {
+    try {
+      return JSON.parse(text) as PandeyraResponse;
+    } catch {
+      // fall through to plain-text parsing
+    }
+  }
+
+  const lower = text.toLowerCase();
+  const parts = text.split(/[,|:\s]+/).map((p) => p.trim()).filter(Boolean);
+  const code = parts[0] || '';
+  const statusToken = (parts[1] || parts[0] || '').toLowerCase();
+
+  // Common success codes used by submitsms.jsp gateways (incl. Pandeyra clones).
+  const successCodes = new Set(['1701', '0', '000', '200']);
+  const isSuccessText =
+    lower.includes('success') ||
+    lower.includes('submitted') ||
+    lower.includes('accept') ||
+    /\bsent\b/.test(lower) ||
+    lower === 'ok';
+
+  if (successCodes.has(code) || isSuccessText || statusToken === 'success') {
+    return {
+      status: 'success',
+      message: text,
+      request_id: text,
+    };
+  }
+
+  // Known failure patterns — surface the raw body for debugging.
+  if (
+    lower.includes('error') ||
+    lower.includes('fail') ||
+    lower.includes('invalid') ||
+    lower.includes('reject') ||
+    code.startsWith('17') // e.g. 1702, 1703… gateway error codes
+  ) {
+    return {
+      status: 'error',
+      error: text,
+      message: text,
+    };
+  }
+
+  // Unknown but non-empty response: treat as success only when HTTP was OK
+  // (caller decides). Keep raw text for logging.
+  return {
+    status: 'success',
+    message: text,
+    request_id: text,
+  };
+}
+
+function getPandeyraCredentials(): {
+  username: string;
+  apiKey: string;
+  senderId: string;
+  entityId: string;
+  tempId: string;
+} {
   const username = process.env.PANDEYRA_SMS_USERNAME;
   const apiKey = process.env.PANDEYRA_SMS_API_KEY;
   const senderId = process.env.PANDEYRA_SMS_SENDER_ID || 'MSNJVI';
+  const entityId = process.env.PANDEYRA_SMS_ENTITY_ID || '';
+  const tempId = process.env.PANDEYRA_SMS_TEMP_ID || process.env.PANDEYRA_SMS_TEMPLATE_ID || '';
 
   if (!username || !apiKey) {
     throw new Error('Pandeyra SMS credentials are not configured in environment variables');
   }
 
-  return { username, apiKey, senderId };
+  return { username, apiKey, senderId, entityId, tempId };
 }
 
 /**
@@ -85,8 +171,8 @@ export async function sendSms(
   // Validation
   const normalizedPhone = validatePhoneNumber(phone);
 
-  // Test mode bypass
-  if (process.env.SMS_TEST_MODE === 'true') {
+  // Test mode bypass (SMS_TEST_MODE or OTP_TEST_MODE)
+  if (process.env.SMS_TEST_MODE === 'true' || process.env.OTP_TEST_MODE === 'true') {
     console.log(`[SMS_TEST_MODE] Skipping Pandeyra SMS for ${normalizedPhone}`);
     console.log(`[SMS_TEST_MODE] Template: ${templateId || 'RAW'}`);
     console.log(`[SMS_TEST_MODE] Message: ${message}`);
@@ -99,18 +185,22 @@ export async function sendSms(
     };
   }
 
-  const { username, apiKey, senderId } = getPandeyraCredentials();
+  const { username, apiKey, senderId, entityId, tempId } = getPandeyraCredentials();
+  const mobile = formatMobileForPandeyra(normalizedPhone);
 
   try {
     // Build URL with parameters for Pandeyra SMS API
     const params = new URLSearchParams({
       user: username,
       key: apiKey,
-      mobile: normalizedPhone,
+      mobile,
       message: message,
       senderid: senderId,
       accusage: '1',
     });
+    // Optional DLT fields — required by some Pandeyra / TRAI setups.
+    if (entityId) params.set('entityid', entityId);
+    if (tempId) params.set('tempid', tempId);
 
     const url = `https://sms.pandeyra.com/submitsms.jsp?${params.toString()}`;
 
@@ -122,48 +212,32 @@ export async function sendSms(
       method: 'GET',
       cache: 'no-store',
       signal: controller.signal,
+      headers: { Accept: 'text/plain, application/json, */*' },
     });
 
     clearTimeout(timeoutId);
 
-    let data: PandeyraResponse | null = null;
+    // Always read as text first — Pandeyra returns `1701,success` (not JSON),
+    // even when Content-Type claims otherwise.
+    const textResponse = (await response.text()).trim();
+    console.log('[Pandeyra SMS] Raw response:', {
+      status: response.status,
+      contentType: response.headers.get('content-type') || '',
+      body: textResponse.slice(0, 200),
+      mobile,
+      templateId: templateId || 'RAW',
+    });
 
+    let data: PandeyraResponse;
     try {
-      // Check content-type header
-      const contentType = response.headers.get('content-type') || '';
-
-      if (contentType.includes('application/json')) {
-        data = (await response.json()) as PandeyraResponse;
-      } else {
-        // API returned non-JSON response, try to parse as text
-        const textResponse = await response.text();
-        console.log('[Pandeyra SMS] Received non-JSON response:', textResponse);
-
-        // Check if response indicates success
-        if (
-          textResponse &&
-          (textResponse.toLowerCase().includes('success') ||
-            textResponse.toLowerCase().includes('sent') ||
-            textResponse.toLowerCase().includes('ok'))
-        ) {
-          data = {
-            status: 'success',
-            message: textResponse,
-            request_id: textResponse,
-          };
-        } else {
-          // Try to parse as JSON anyway, in case it's actually JSON
-          try {
-            data = JSON.parse(textResponse) as PandeyraResponse;
-          } catch {
-            // If still fails, treat as error
-            throw new Error(`Unexpected response format: ${textResponse.substring(0, 50)}`);
-          }
-        }
-      }
+      data = parsePandeyraResponse(textResponse);
     } catch (parseError) {
-      console.error('[Pandeyra SMS] Response parsing error:', parseError);
-      throw new Error('Invalid response format from Pandeyra SMS API');
+      console.error('[Pandeyra SMS] Response parsing error:', parseError, textResponse);
+      throw new Error(
+        `Invalid response format from Pandeyra SMS API${
+          textResponse ? `: ${textResponse.slice(0, 120)}` : ''
+        }`
+      );
     }
 
     // Check response status
@@ -175,7 +249,7 @@ export async function sendSms(
         statusText: response.statusText,
         apiResponse: data,
         templateId,
-        phone: normalizedPhone,
+        phone: mobile,
       });
 
       throw new Error(`Pandeyra SMS API error: ${errorMessage}`);
@@ -187,7 +261,9 @@ export async function sendSms(
       if (
         !(
           data.message &&
-          (data.message.toLowerCase().includes('sent') || data.message.toLowerCase().includes('success'))
+          (data.message.toLowerCase().includes('sent') ||
+            data.message.toLowerCase().includes('success') ||
+            data.message.toLowerCase().includes('1701'))
         )
       ) {
         const errorMessage = data.error || data.message || 'API returned failure';
@@ -198,7 +274,7 @@ export async function sendSms(
       }
     }
 
-    console.log(`[Pandeyra SMS] SMS sent successfully to ${normalizedPhone}`, {
+    console.log(`[Pandeyra SMS] SMS sent successfully to ${mobile}`, {
       templateId: templateId || 'RAW',
       requestId: data?.request_id,
       timestamp: new Date(),

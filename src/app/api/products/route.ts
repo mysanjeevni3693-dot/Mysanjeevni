@@ -291,15 +291,19 @@ export async function POST(request: NextRequest) {
     const primaryImage =
       (typeof image === 'string' && image.trim()) || normalizedImages[0] || undefined;
 
-    // Normalize bullet-style textareas to newline-separated lines for consistent rendering.
-    const normalizeBulletText = (value: unknown): string | undefined => {
+    // Preserve rich-text HTML from the admin/vendor editors. For legacy plain
+    // text (no tags), keep newline-separated bullets for consistent list rendering.
+    const normalizeRichOrBulletText = (value: unknown): string | undefined => {
       if (typeof value !== 'string') return undefined;
-      const lines = value
+      const trimmed = value.trim();
+      if (!trimmed) return undefined;
+      if (trimmed.includes('<') && trimmed.includes('>')) return trimmed;
+      const lines = trimmed
         .replace(/<br\s*\/?>/gi, '\n')
         .split(/\r\n|\n|\r|\u2028|\u2029/)
         .map((line) => line.replace(/^[-*•]\s*/, '').trim())
         .filter(Boolean);
-      return lines.length > 0 ? lines.join('\n') : value.trim() || undefined;
+      return lines.length > 0 ? lines.join('\n') : trimmed;
     };
 
     const product = await Product.create({
@@ -316,8 +320,8 @@ export async function POST(request: NextRequest) {
       healthConcerns,
       dosage,
       packaging,
-      safetyInformation: normalizeBulletText(safetyInformation),
-      specifications: normalizeBulletText(specifications),
+      safetyInformation: normalizeRichOrBulletText(safetyInformation),
+      specifications: normalizeRichOrBulletText(specifications),
       requiresPrescription,
       image: primaryImage,
       images: normalizedImages,

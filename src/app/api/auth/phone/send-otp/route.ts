@@ -144,6 +144,10 @@ export async function POST(request: NextRequest) {
         message: 'OTP sent successfully',
         phone: normalizedPhone,
         cooldownSeconds: RESEND_COOLDOWN_SECONDS,
+        // Visible only when OTP/SMS test mode is enabled (never in production traffic).
+        ...(process.env.OTP_TEST_MODE === 'true' || process.env.SMS_TEST_MODE === 'true'
+          ? { debugOtp: otp }
+          : {}),
       },
       { status: 200 }
     );

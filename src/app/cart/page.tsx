@@ -561,6 +561,14 @@ export default function CartPage() {
       return;
     }
 
+    // Pandeyra SMS OTP is India/DLT-only. International checkout uses PayPal,
+    // so skip phone OTP for non-India carts.
+    if (!isIndia) {
+      setIsOTPVerified(true);
+      setShowAddressForm(true);
+      return;
+    }
+
     // First check if OTP is verified
     if (!isOTPVerified) {
       setShowOTPModal(true);

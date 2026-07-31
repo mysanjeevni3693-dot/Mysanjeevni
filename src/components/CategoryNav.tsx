@@ -28,7 +28,6 @@ type DynamicCategoryConfig = {
 };
 
 const CATEGORY_TREE_ROOT_ALIASES: Record<string, string[]> = {
-  Medicines: ['Generic Medicine'],
   Ayurveda: ['Ayurveda Medicine'],
   Disease: ['Disease Categories', 'Disease'],
 };
@@ -71,7 +70,6 @@ const getTreeNodeForCategory = (
 };
 
 const getCategoryBasePath = (categoryName: string) => {
-  if (categoryName === 'Medicines') return '/medicines';
   if (categoryName === 'Ayurveda') return '/ayurveda';
   if (categoryName === 'Homeopathy') return '/homeopathy';
   return '/medicines';
@@ -81,10 +79,6 @@ const getTreeNodeHref = (categoryName: string, path: string[]) => {
   const linkName = path[path.length - 1] || '';
   if (!linkName) {
     return `${getCategoryBasePath(categoryName)}#products-section`;
-  }
-
-  if (categoryName === 'Medicines') {
-    return `${getCategoryBasePath(categoryName)}?subcategory=${encodeURIComponent(linkName)}#products-section`;
   }
 
   if (categoryName === 'Ayurveda' || categoryName === 'Homeopathy') {
@@ -329,14 +323,6 @@ const flattenSubcategories = (groupedSubcategories: Record<string, string[]>) =>
 
 const CATEGORIES: Category[] = [
   {
-    name: 'Medicines',
-    icon: '💊',
-    color: 'emerald',
-    href: '/medicines',
-    subcategories: ['All', ...flattenSubcategories(DISEASE_GROUPED_SUBCATEGORIES)],
-    groupedSubcategories: DISEASE_GROUPED_SUBCATEGORIES,
-  },
-  {
     name: 'Ayurveda',
     icon: '🌿',
     color: 'emerald',
@@ -454,10 +440,6 @@ const getDynamicGroupedByCategory = (
   );
 
   return {
-    Medicines:
-      Object.keys(diseaseMap).length > 0
-        ? diseaseMap
-        : toSingleGroup('Categories', vendorMap['Generic Medicine']),
     Ayurveda:
       pickFirstMap(subByType, ['Ayurveda', 'Ayurveda Medicine']) ||
       AYURVEDA_GROUPED_SUBCATEGORIES,
@@ -604,11 +586,6 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
   };
 
   const getSubcategoryHref = (categoryName: string, subcategoryName: string) => {
-    if (categoryName === 'Medicines') {
-      // Medicines mega-menu lists disease concerns — keep disease filter params.
-      return buildHref('/medicines', { category: 'disease', subcategory: subcategoryName });
-    }
-
     if (categoryName === 'Ayurveda') {
       return buildHref('/ayurveda', { category: subcategoryName });
     }
@@ -634,7 +611,6 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
   };
 
   const getCategoryHref = (category: Category) => {
-    if (category.name === 'Medicines') return buildHref('/medicines');
     if (category.name === 'Ayurveda') return buildHref('/ayurveda');
     if (category.name === 'Homeopathy') return buildHref('/homeopathy');
 
@@ -714,8 +690,7 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
           <div
             className={`absolute ${dropdownPositionClass} mt-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50`}
           >
-            {category.name !== 'Medicines' &&
-            category.name !== 'Disease' &&
+            {category.name !== 'Disease' &&
             getTreeNodeForCategory(categoryTree, category.name)?.children?.length ? (
               renderTreeDropdown(getTreeNodeForCategory(categoryTree, category.name)!.children, category.name, category.color)
             ) : category.groupedSubcategories ? (

@@ -1091,19 +1091,28 @@ export default function MedicineDetailsPage() {
                     <div className="space-y-4">
                       <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
                         <h4 className="font-bold text-orange-900 mb-2">⚠️ Safety Information</h4>
-                        <ul className="list-disc pl-5 space-y-2 text-sm text-orange-900">
-                          {safetyItems.length > 0 ? (
-                            safetyItems.map((item) => <li key={item}>{item}</li>)
-                          ) : (
-                            <>
-                              <li>Read the label carefully before use</li>
-                              <li>Store in a cool and dry place away from direct sunlight</li>
-                              <li>Keep out of reach of children</li>
-                              <li>Use as directed by physician</li>
-                              <li>Do not use if allergic to any ingredients</li>
-                            </>
-                          )}
-                        </ul>
+                        {product.safetyInformation &&
+                        product.safetyInformation.includes('<') &&
+                        product.safetyInformation.includes('>') ? (
+                          <SafeHTML
+                            html={product.safetyInformation}
+                            className="text-sm text-orange-900 leading-7 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1"
+                          />
+                        ) : (
+                          <ul className="list-disc pl-5 space-y-2 text-sm text-orange-900">
+                            {safetyItems.length > 0 ? (
+                              safetyItems.map((item) => <li key={item}>{item}</li>)
+                            ) : (
+                              <>
+                                <li>Read the label carefully before use</li>
+                                <li>Store in a cool and dry place away from direct sunlight</li>
+                                <li>Keep out of reach of children</li>
+                                <li>Use as directed by physician</li>
+                                <li>Do not use if allergic to any ingredients</li>
+                              </>
+                            )}
+                          </ul>
+                        )}
                       </div>
                       {product.requiresPrescription && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -1117,14 +1126,23 @@ export default function MedicineDetailsPage() {
 
                   {activeTab === 'specs' && (
                     <div className="space-y-4">
-                      {specificationItems.length > 0 && (
+                      {product.specifications && (
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
                           <h4 className="font-bold text-slate-900 mb-2">Specifications</h4>
-                          <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">
-                            {specificationItems.map((item) => (
-                              <li key={item}>{item}</li>
-                            ))}
-                          </ul>
+                          {product.specifications.includes('<') && product.specifications.includes('>') ? (
+                            <SafeHTML
+                              html={product.specifications}
+                              className="text-sm text-slate-700 leading-7 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1"
+                            />
+                          ) : specificationItems.length > 0 ? (
+                            <ul className="list-disc pl-5 space-y-2 text-sm text-slate-700">
+                              {specificationItems.map((item) => (
+                                <li key={item}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap">{product.specifications}</p>
+                          )}
                         </div>
                       )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

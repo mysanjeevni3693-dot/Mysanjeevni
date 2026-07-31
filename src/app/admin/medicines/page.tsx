@@ -745,16 +745,7 @@ export default function AdminMedicines() {
         }
       }
       
-      const normalizeBulletText = (value?: string) => {
-        if (!value) return undefined;
-        const lines = value
-          .replace(/<br\s*\/?>/gi, '\n')
-          .split(/\r\n|\n|\r|\u2028|\u2029/)
-          .map((line) => line.replace(/^[-*•]\s*/, '').trim())
-          .filter(Boolean);
-        return lines.length > 0 ? lines.join('\n') : value.trim() || undefined;
-      };
-      const payload = { name: prodForm.name, brand: prodForm.brand, category: prodForm.categoryPath[0] || prodForm.category, subcategory: prodForm.categoryPath[1] || prodForm.subcategory || undefined, categories: prodForm.categoryPath, extraCategoryPaths: (prodForm.extraCategoryPaths || []).map((path) => path.map((value) => value.trim()).filter(Boolean)).filter((path) => path.length > 0), diseasePaths: prodForm.diseasePaths || [], diseaseCategory: prodForm.diseasePaths?.[0]?.[0] || prodForm.diseaseCategory || undefined, diseaseSubcategory: prodForm.diseasePaths?.[0]?.[1] || prodForm.diseaseSubcategory || undefined, productType: prodForm.productType || 'Generic Medicine', price: Number(prodForm.price), usdPrice: Number(prodForm.usdPrice), mrp: prodForm.mrp ? Number(prodForm.mrp) : undefined, stock: Number(prodForm.stock) || 0, description: prodForm.description, shortDescription: prodForm.shortDescription || undefined, safetyInformation: normalizeBulletText(prodForm.safetyInformation), specifications: normalizeBulletText(prodForm.specifications), benefit: prodForm.benefit || undefined, requiresPrescription: prodForm.requiresPrescription, images: images, image: images.length > 0 ? images[0] : undefined, isActive: true, popularSections: prodForm.popularSections || [], potency: prodForm.potency || undefined, quantity: prodForm.quantity ? Number(prodForm.quantity) : undefined, quantityUnit: prodForm.quantityUnit || 'None' };
+      const payload = { name: prodForm.name, brand: prodForm.brand, category: prodForm.categoryPath[0] || prodForm.category, subcategory: prodForm.categoryPath[1] || prodForm.subcategory || undefined, categories: prodForm.categoryPath, extraCategoryPaths: (prodForm.extraCategoryPaths || []).map((path) => path.map((value) => value.trim()).filter(Boolean)).filter((path) => path.length > 0), diseasePaths: prodForm.diseasePaths || [], diseaseCategory: prodForm.diseasePaths?.[0]?.[0] || prodForm.diseaseCategory || undefined, diseaseSubcategory: prodForm.diseasePaths?.[0]?.[1] || prodForm.diseaseSubcategory || undefined, productType: prodForm.productType || 'Generic Medicine', price: Number(prodForm.price), usdPrice: Number(prodForm.usdPrice), mrp: prodForm.mrp ? Number(prodForm.mrp) : undefined, stock: Number(prodForm.stock) || 0, description: prodForm.description, shortDescription: prodForm.shortDescription || undefined, safetyInformation: prodForm.safetyInformation || undefined, specifications: prodForm.specifications || undefined, benefit: prodForm.benefit || undefined, requiresPrescription: prodForm.requiresPrescription, images: images, image: images.length > 0 ? images[0] : undefined, isActive: true, popularSections: prodForm.popularSections || [], potency: prodForm.potency || undefined, quantity: prodForm.quantity ? Number(prodForm.quantity) : undefined, quantityUnit: prodForm.quantityUnit || 'None' };
       if (editMed) await fetch(`/api/admin/products/${editMed._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       else await fetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       setShowProdForm(false); setEditMed(null); setImages([]); await fetchProducts();
@@ -1460,8 +1451,22 @@ export default function AdminMedicines() {
                       placeholder="Enter product description with formatting..."
                     />
                   </div>
-                  <textarea placeholder="Safety Information (one point per line)" value={prodForm.safetyInformation || ''} onChange={(e) => setProdForm({ ...prodForm, safetyInformation: e.target.value })} className="border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-3" rows={3} />
-                  <textarea placeholder="Specifications (one point per line)" value={prodForm.specifications || ''} onChange={(e) => setProdForm({ ...prodForm, specifications: e.target.value })} className="border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-3" rows={3} />
+                  <div className="md:col-span-3">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Safety Information (with formatting)</label>
+                    <RichTextEditor
+                      value={prodForm.safetyInformation || ''}
+                      onChange={(value) => setProdForm({ ...prodForm, safetyInformation: value })}
+                      placeholder="Enter safety information with bullet points and formatting..."
+                    />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">Specifications (with formatting)</label>
+                    <RichTextEditor
+                      value={prodForm.specifications || ''}
+                      onChange={(value) => setProdForm({ ...prodForm, specifications: value })}
+                      placeholder="Enter specifications with bullet points and formatting..."
+                    />
+                  </div>
                 </div>
 
                 <label className="flex items-center gap-2 cursor-pointer mb-6 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">

@@ -2609,20 +2609,22 @@ export default function VendorDashboard() {
                         placeholder="Enter product description with formatting..."
                       />
                     </div>
-                    <textarea
-                      placeholder="Safety Information (one point per line)"
-                      value={newProduct.safetyInformation}
-                      onChange={(e) => setNewProduct({ ...newProduct, safetyInformation: e.target.value })}
-                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-3"
-                      rows={3}
-                    />
-                    <textarea
-                      placeholder="Specifications (one point per line)"
-                      value={newProduct.specifications}
-                      onChange={(e) => setNewProduct({ ...newProduct, specifications: e.target.value })}
-                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-3"
-                      rows={3}
-                    />
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Safety Information (with formatting)</label>
+                      <RichTextEditor
+                        value={newProduct.safetyInformation || ''}
+                        onChange={(value) => setNewProduct({ ...newProduct, safetyInformation: value })}
+                        placeholder="Enter safety information with bullet points and formatting..."
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Specifications (with formatting)</label>
+                      <RichTextEditor
+                        value={newProduct.specifications || ''}
+                        onChange={(value) => setNewProduct({ ...newProduct, specifications: value })}
+                        placeholder="Enter specifications with bullet points and formatting..."
+                      />
+                    </div>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer mb-6 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
                     <input
@@ -3027,20 +3029,22 @@ export default function VendorDashboard() {
                         placeholder="Enter product description with formatting..."
                       />
                     </div>
-                    <textarea
-                      placeholder="Safety Information (one point per line)"
-                      value={editProduct.safetyInformation}
-                      onChange={(e) => setEditProduct({ ...editProduct, safetyInformation: e.target.value })}
-                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-3"
-                      rows={3}
-                    />
-                    <textarea
-                      placeholder="Specifications (one point per line)"
-                      value={editProduct.specifications}
-                      onChange={(e) => setEditProduct({ ...editProduct, specifications: e.target.value })}
-                      className="border border-slate-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-500 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent shadow-sm md:col-span-3"
-                      rows={3}
-                    />
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Safety Information (with formatting)</label>
+                      <RichTextEditor
+                        value={editProduct.safetyInformation || ''}
+                        onChange={(value) => setEditProduct({ ...editProduct, safetyInformation: value })}
+                        placeholder="Enter safety information with bullet points and formatting..."
+                      />
+                    </div>
+                    <div className="md:col-span-3">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">Specifications (with formatting)</label>
+                      <RichTextEditor
+                        value={editProduct.specifications || ''}
+                        onChange={(value) => setEditProduct({ ...editProduct, specifications: value })}
+                        placeholder="Enter specifications with bullet points and formatting..."
+                      />
+                    </div>
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer mb-6 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
                     <input
