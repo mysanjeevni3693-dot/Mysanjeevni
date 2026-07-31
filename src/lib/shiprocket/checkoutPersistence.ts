@@ -19,7 +19,7 @@ import { Address } from '@/lib/models/Address';
 import { User } from '@/lib/models/User';
 import { Product } from '@/lib/models/Product';
 import { shiprocketLogger } from './logger';
-import { CHECKOUT_DELIVERY_VARIANT_ID, type CheckoutOrder } from './types';
+import { CHECKOUT_DELIVERY_VARIANT_IDS, type CheckoutOrder } from './types';
 
 /** Maps SRC payment status text onto our order paymentStatus enum. */
 export function mapCheckoutPaymentStatus(status: string): 'pending' | 'completed' | 'failed' {
@@ -122,7 +122,7 @@ export async function persistCheckoutOrder(
   // Enrich line items with product name/price/vendor from our catalog when possible.
   // Skip the synthetic delivery line item — it is stored as shippingCharge instead.
   const productLines = order.items.filter(
-    (item) => item.variantId && item.variantId !== CHECKOUT_DELIVERY_VARIANT_ID
+    (item) => item.variantId && !CHECKOUT_DELIVERY_VARIANT_IDS.has(String(item.variantId))
   );
   const items = await Promise.all(
     productLines.map(async (item) => {

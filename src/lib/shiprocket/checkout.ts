@@ -11,11 +11,16 @@
  */
 
 import crypto from 'crypto';
-import { shiprocketCheckoutConfig, hasShiprocketCheckoutCredentials } from './config';
+import {
+  shiprocketCheckoutConfig,
+  shiprocketConfig,
+  hasShiprocketCheckoutCredentials,
+} from './config';
 import { ShiprocketError, mapStatusToErrorCode } from './errors';
 import { shiprocketLogger } from './logger';
 import {
   CHECKOUT_DELIVERY_VARIANT_ID,
+  CHECKOUT_DELIVERY_VARIANT_IDS,
   type CheckoutAddress,
   type CheckoutOrder,
   type CheckoutTokenInput,
@@ -107,45 +112,23 @@ export async function createCheckoutToken(
 ): Promise<CheckoutTokenResult> {
   shiprocketLogger.info('order', 'Creating checkout access token', { items: input.items.length });
 
-  // Fastrr / Shiprocket Checkout is INR-denominated. Never forward USD amounts
-  // as-is (that surfaces as "$16 cart → ₹16 checkout"). Convert USD → INR when
-  // a non-INR currency slips through, then lock the token to INR.
-  let currency = 'INR';
-  let priceMultiplier = 1;
-  const requestedCurrency = (input.currency || 'INR').toUpperCase();
-  if (requestedCurrency !== 'INR') {
-    try {
-      const { getExchangeRate } = await import('@/lib/currencyUtils');
-      const inrToUsd = await getExchangeRate();
-      priceMultiplier = inrToUsd > 0 ? 1 / inrToUsd : 1 / 0.012;
-      shiprocketLogger.warn('order', 'Converting non-INR cart to INR for Shiprocket Checkout', {
-        requestedCurrency,
-        priceMultiplier,
-      });
-    } catch {
-      priceMultiplier = 1 / 0.012;
-    }
-  }
+  // Keep the access-token payload minimal — extra shipping/currency fields cause
+  // Fastrr to return HTTP 500. Delivery is injected as a normal catalog line item.
+  const envDefaultShipping =
+    Number(shiprocketConfig.defaultShippingCharge || process.env.DEFAULT_SHIPPING_CHARGE || 50) || 50;
+  const requestedShipping = Math.max(0, Number(input.shippingCharges || 0) || 0);
+  const isInr = (input.currency || 'INR').toUpperCase() === 'INR';
+  const shippingCharges =
+    requestedShipping > 0 ? requestedShipping : isInr ? Math.max(0, envDefaultShipping) : 0;
 
-  const toInr = (amount: number) =>
-    Math.round(Math.max(0, Number(amount) || 0) * priceMultiplier * 100) / 100;
-
-  const shippingCharges = toInr(input.shippingCharges || 0);
-  const couponAmount = input.coupon ? toInr(input.coupon.amount) : 0;
-
-  // Build line items. When we have a delivery charge, also inject it as a
-  // catalog line item — Shiprocket's hosted UI often ignores cart-level
-  // shipping_charges when the dashboard is set to "free shipping", but it
-  // always includes priced catalog items in the payable total.
   const items = input.items.map((item) => ({
     variant_id: item.variantId,
     quantity: item.quantity,
     catalog_data: {
-      price: toInr(item.price),
+      price: item.price,
       name: item.name,
       // Shiprocket rejects a blank image_url, so fall back to a placeholder.
       image_url: item.imageUrl || shiprocketCheckoutConfig.placeholderImage,
-      currency,
     },
   }));
 
@@ -157,34 +140,29 @@ export async function createCheckoutToken(
         price: shippingCharges,
         name: 'Delivery Charges',
         image_url: shiprocketCheckoutConfig.placeholderImage,
-        currency,
       },
     });
   }
 
+  const customAttributes = {
+    ...(input.customAttributes || {}),
+    ...(shippingCharges > 0 ? { shipping_charges: String(shippingCharges) } : {}),
+  };
+
+  shiprocketLogger.info('order', 'Checkout token shipping', {
+    requestedShipping,
+    shippingCharges,
+    itemCount: items.length,
+  });
+
+  // Shape must match Fastrr's documented access-token/checkout body.
   const body = {
-    // Top-level currency for clients that read it outside cart_data.
-    currency,
-    currency_code: currency,
     cart_data: {
       items,
-      // Also send the canonical shipping field for dashboards that honor it.
-      shipping_charges: shippingCharges,
-      ...(shippingCharges > 0
-        ? {
-            shipping_method: {
-              title: 'Delivery Charges',
-              amount: shippingCharges,
-              price: shippingCharges,
-            },
-          }
+      ...(input.coupon
+        ? { cart_discount: { coupon_code: input.coupon.code, amount: input.coupon.amount } }
         : {}),
-      ...(input.coupon && couponAmount > 0
-        ? { cart_discount: { coupon_code: input.coupon.code, amount: couponAmount } }
-        : {}),
-      ...(input.customAttributes ? { custom_attributes: input.customAttributes } : {}),
-      currency,
-      currency_code: currency,
+      ...(Object.keys(customAttributes).length > 0 ? { custom_attributes: customAttributes } : {}),
       mobile_app: false,
     },
     redirect_url: redirectUrl,
@@ -317,7 +295,9 @@ export function parseCheckoutOrder(raw: Record<string, unknown>): CheckoutOrder 
 
   // Prefer Shiprocket's shipping_charges; fall back to our injected delivery line
   // item when the hosted checkout treated shipping as a catalog product.
-  const deliveryLine = items.find((item) => item.variantId === CHECKOUT_DELIVERY_VARIANT_ID);
+  const deliveryLine = items.find((item) =>
+    CHECKOUT_DELIVERY_VARIANT_IDS.has(String(item.variantId || ''))
+  );
   const shippingFromLine = deliveryLine
     ? (Number(deliveryLine.price) || 0) * Math.max(1, Number(deliveryLine.quantity) || 1)
     : 0;

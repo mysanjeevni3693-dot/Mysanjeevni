@@ -72,12 +72,29 @@ export function isDelhiNcrAddress(input?: {
 
 /**
  * Returns the flat India shipping charge for an address.
- * Falls back to rest-of-India ₹79 when location is unknown.
+ * - Delhi NCR → ₹50
+ * - Rest of India → ₹79
+ * - Unknown location → DEFAULT_SHIPPING_CHARGE (env) or ₹50
  */
 export function getIndiaFlatShippingCharge(input?: {
   city?: string | null;
   state?: string | null;
   pincode?: string | null;
 }): number {
+  const city = String(input?.city || '').trim();
+  const state = String(input?.state || '').trim();
+  const pincode = String(input?.pincode || '').replace(/\D/g, '');
+  const hasLocationHint = Boolean(city || state || pincode.length >= 3);
+
+  if (!hasLocationHint) {
+    // Match DEFAULT_SHIPPING_CHARGE from env when address is not filled yet.
+    const fromEnv = Number(
+      process.env.NEXT_PUBLIC_DEFAULT_SHIPPING_CHARGE ||
+        process.env.DEFAULT_SHIPPING_CHARGE ||
+        INDIA_SHIPPING_NCR
+    );
+    return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : INDIA_SHIPPING_NCR;
+  }
+
   return isDelhiNcrAddress(input) ? INDIA_SHIPPING_NCR : INDIA_SHIPPING_REST;
 }

@@ -1167,26 +1167,48 @@ export default function AdminMedicines() {
                 
                 {/* Multi-Image Upload Section */}
                 <div className="mb-6 p-4 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50">
-                  <label className="block text-sm font-semibold text-slate-700 mb-3">Medicine Images (up to 4)</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-1">
+                    Medicine Images (up to 4)
+                  </label>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Select multiple files at once, or choose again to add more. {images.length}/4 uploaded.
+                  </p>
                   <input
                     type="file"
                     accept="image/*"
                     multiple
                     onChange={async (e) => {
-                      const files = e.target.files;
-                      if (!files) return;
-                      if (images.length + files.length > 4) {
-                        alert('You can upload up to 4 images.');
+                      const input = e.target;
+                      const files = Array.from(input.files || []);
+                      // Allow selecting more files later (same input won't re-fire otherwise).
+                      input.value = '';
+                      if (files.length === 0) return;
+
+                      const remaining = 4 - images.length;
+                      if (remaining <= 0) {
+                        alert('You already have 4 images. Remove one to add another.');
                         return;
                       }
-                      for (let i = 0; i < files.length; i++) {
-                        const file = files[i];
+                      if (files.length > remaining) {
+                        alert(`You can add ${remaining} more image(s) (max 4). Only the first ${remaining} will be uploaded.`);
+                      }
+
+                      const toUpload = files.slice(0, remaining);
+                      let failed = 0;
+                      for (const file of toUpload) {
                         const result = await uploadImage(file);
                         if (result?.success && result.imageUrl) {
-                          setImages((prev: string[]) => [...prev, result.imageUrl as string].slice(0, 4));
+                          setImages((prev: string[]) =>
+                            prev.includes(result.imageUrl as string)
+                              ? prev
+                              : [...prev, result.imageUrl as string].slice(0, 4)
+                          );
                         } else {
-                          alert('Failed to upload one or more images.');
+                          failed += 1;
                         }
+                      }
+                      if (failed > 0) {
+                        alert(`Failed to upload ${failed} image(s). Please try again.`);
                       }
                     }}
                     disabled={imageUploading || images.length >= 4}
@@ -1196,21 +1218,24 @@ export default function AdminMedicines() {
                     <p className="mt-2 text-red-600 text-sm font-medium">❌ {uploadError}</p>
                   )}
                   {imageUploading && (
-                    <p className="mt-2 text-blue-600 text-sm font-medium">⏳ Uploading image...</p>
+                    <p className="mt-2 text-blue-600 text-sm font-medium">⏳ Uploading image(s)...</p>
                   )}
                   {images.length > 0 && (
-                    <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
                       {images.map((url, idx) => (
-                        <div key={idx} className="flex flex-col items-center">
+                        <div key={`${url}-${idx}`} className="flex flex-col items-center">
                           <img
                             src={url}
                             alt={`Medicine ${idx + 1}`}
                             className="w-32 h-32 object-cover rounded-lg border border-slate-200"
                           />
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {idx === 0 ? 'Primary' : `Image ${idx + 1}`}
+                          </p>
                           <button
                             type="button"
-                            className="mt-2 text-xs text-red-600 hover:underline"
-                            onClick={() => setImages(prev => prev.filter((_, i) => i !== idx))}
+                            className="mt-1 text-xs text-red-600 hover:underline"
+                            onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
                           >
                             Remove
                           </button>

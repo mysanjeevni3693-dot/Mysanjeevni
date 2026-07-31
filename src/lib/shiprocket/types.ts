@@ -304,8 +304,17 @@ export const checkoutTokenSchema = z.object({
   customAttributes: z.record(z.string(), z.string()).optional(),
 });
 
-/** Reserved variant id used to inject delivery as a Fast Checkout line item. */
-export const CHECKOUT_DELIVERY_VARIANT_ID = 'mysanjeevni-delivery-charge';
+/**
+ * Reserved variant id used to inject delivery as a Fast Checkout line item.
+ * Numeric id — Fastrr/Shiprocket often drops non-numeric variant ids.
+ */
+export const CHECKOUT_DELIVERY_VARIANT_ID = '9000000001';
+
+/** Older delivery variant id (kept so webhooks still map shipping correctly). */
+export const CHECKOUT_DELIVERY_VARIANT_IDS = new Set([
+  CHECKOUT_DELIVERY_VARIANT_ID,
+  'mysanjeevni-delivery-charge',
+]);
 
 export type CheckoutTokenInput = z.infer<typeof checkoutTokenSchema>;
 

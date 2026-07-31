@@ -986,7 +986,11 @@ export default function CartPage() {
       // so Fast Checkout totals match the cart (Shiprocket dashboard free-shipping
       // rules must not zero out our flat India rates).
       const coupon = discount > 0 ? { code: 'MYSANJEEVNI10', amount: discount } : undefined;
-      customAttributes.shipping_charges = String(deliveryCharge);
+      // Never send 0 for India — server also falls back to DEFAULT_SHIPPING_CHARGE.
+      const checkoutShipping = deliveryCharge > 0 ? deliveryCharge : flatIndiaShipping || 50;
+      customAttributes.shipping_charges = String(checkoutShipping);
+      customAttributes.delivery_city = String(address.city || '');
+      customAttributes.delivery_pincode = String(address.postalCode || '');
 
       const res = await fetch('/api/shiprocket/checkout/token', {
         method: 'POST',
@@ -994,14 +998,16 @@ export default function CartPage() {
         body: JSON.stringify({
           items,
           currency: 'INR',
-          shippingCharges: deliveryCharge,
+          shippingCharges: checkoutShipping,
           ...(coupon ? { coupon } : {}),
           customAttributes,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data?.success || !data?.data?.token) {
-        alert(data?.error?.message || 'Unable to start Shiprocket Checkout. Please try again.');
+        const detail = data?.error?.message || data?.error || 'Unable to start Shiprocket Checkout';
+        console.error('[Shiprocket Checkout token]', data);
+        alert(typeof detail === 'string' ? detail : 'Unable to start Shiprocket Checkout. Please try again.');
         return;
       }
 
@@ -1236,7 +1242,8 @@ export default function CartPage() {
                     {isOTPVerified ? '💳 Buy Now' : '🔐 Verify OTP & Buy'}
                   </button>
 
-                  {SRC_ENABLED && (
+                  {/* India: Shiprocket when enabled. International: always show PayPal fast path. */}
+                  {(SRC_ENABLED || !isIndia) && (
                     <>
                       <div className="flex items-center gap-3 my-4">
                         <span className="h-px flex-1 bg-gray-200" />
