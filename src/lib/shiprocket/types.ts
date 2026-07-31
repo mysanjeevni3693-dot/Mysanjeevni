@@ -286,6 +286,8 @@ export const checkoutTokenSchema = z.object({
       })
     )
     .min(1),
+  /** Cart currency — INR for India, USD (etc.) for international. */
+  currency: z.string().trim().min(3).max(3).optional(),
   /** Optional fixed cart discount / coupon. */
   coupon: z
     .object({

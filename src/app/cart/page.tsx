@@ -958,10 +958,15 @@ export default function CartPage() {
           imageUrl: isImageUrl(item.image) ? (item.image as string) : '',
         }));
 
-      // Stamp the signed-in user id onto the order so the webhook can attribute
-      // it to the right account even if the customer enters a different phone or
-      // email inside the hosted checkout.
-      const customAttributes = user?.id ? { user_id: String(user.id) } : undefined;
+      // Stamp the signed-in user id + preferred market onto the order so the
+      // webhook can attribute it correctly even if the customer enters a
+      // different phone/email inside the hosted checkout.
+      const checkoutCurrency = isIndia ? 'INR' : 'USD';
+      const customAttributes: Record<string, string> = {
+        preferred_country: String(selectedCountry || (isIndia ? 'IN' : 'US')),
+        currency: checkoutCurrency,
+      };
+      if (user?.id) customAttributes.user_id = String(user.id);
 
       // Pass our cart-level discount to Shiprocket so the hosted checkout shows
       // the same after-discount price as our own summary. Shipping is handled by
@@ -973,8 +978,9 @@ export default function CartPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items,
+          currency: checkoutCurrency,
           ...(coupon ? { coupon } : {}),
-          ...(customAttributes ? { customAttributes } : {}),
+          customAttributes,
         }),
       });
       const data = await res.json();
@@ -1214,7 +1220,7 @@ export default function CartPage() {
                     {isOTPVerified ? '💳 Buy Now' : '🔐 Verify OTP & Buy'}
                   </button>
 
-                  {SRC_ENABLED && isIndia && (
+                  {SRC_ENABLED && (
                     <>
                       <div className="flex items-center gap-3 my-4">
                         <span className="h-px flex-1 bg-gray-200" />
@@ -1239,12 +1245,6 @@ export default function CartPage() {
                         Address & payment handled securely by Shiprocket Checkout
                       </p>
                     </>
-                  )}
-
-                  {SRC_ENABLED && !isIndia && (
-                    <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-center">
-                      Fast Checkout (Shiprocket) is available for India deliveries. For international orders, please use Buy Now / PayPal below.
-                    </p>
                   )}
 
                   <div className="mt-4 text-xs text-gray-600 text-center space-y-1">

@@ -106,6 +106,8 @@ export async function createCheckoutToken(
 ): Promise<CheckoutTokenResult> {
   shiprocketLogger.info('order', 'Creating checkout access token', { items: input.items.length });
 
+  const currency = (input.currency || 'INR').toUpperCase();
+
   const body = {
     cart_data: {
       items: input.items.map((item) => ({
@@ -116,12 +118,14 @@ export async function createCheckoutToken(
           name: item.name,
           // Shiprocket rejects a blank image_url, so fall back to a placeholder.
           image_url: item.imageUrl || shiprocketCheckoutConfig.placeholderImage,
+          currency,
         },
       })),
       ...(input.coupon
         ? { cart_discount: { coupon_code: input.coupon.code, amount: input.coupon.amount } }
         : {}),
       ...(input.customAttributes ? { custom_attributes: input.customAttributes } : {}),
+      currency,
       mobile_app: false,
     },
     redirect_url: redirectUrl,
