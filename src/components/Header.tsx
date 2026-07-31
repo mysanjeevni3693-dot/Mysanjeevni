@@ -229,7 +229,11 @@ export default function Header() {
     setSelectedCountry(normalized);
     setCountryLetter(getCountryOption(normalized).label.charAt(0).toUpperCase());
     setCountrySearch('');
+    // Native `storage` only fires across tabs — also notify same-tab listeners (cart).
     window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(
+      new CustomEvent('preferredCountryChanged', { detail: { country: normalized } })
+    );
   };
 
   useEffect(() => {

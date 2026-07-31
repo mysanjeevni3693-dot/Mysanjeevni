@@ -24,8 +24,12 @@ export function usePreferredCountry() {
 
     syncCountry();
     window.addEventListener('storage', syncCountry);
+    window.addEventListener('preferredCountryChanged', syncCountry);
 
-    return () => window.removeEventListener('storage', syncCountry);
+    return () => {
+      window.removeEventListener('storage', syncCountry);
+      window.removeEventListener('preferredCountryChanged', syncCountry);
+    };
   }, []);
 
   return {

@@ -178,10 +178,15 @@ export default function CartPage() {
     error: '',
   });
   const router = useRouter();
-  const { isIndia: isIndiaPreference } = usePreferredCountry();
+  const { country: preferredCountry } = usePreferredCountry();
 
-  const isIndia = isIndiaCountry(selectedCountry);
-  const currencySymbol = isIndiaCountry(selectedCountry) ? '₹' : '$';
+  // Prefer live country preference; also treat USD carts as international so Fast
+  // Checkout (PayPal) stays visible even if country state briefly lags.
+  const cartLooksInternational = cartItems.some(
+    (item) => item?.currency === 'USD' || item?.currencySymbol === '$'
+  );
+  const isIndia = isIndiaCountry(selectedCountry) && !cartLooksInternational;
+  const currencySymbol = isIndia ? '₹' : '$';
   const effectivePrice = (item?: CartItem) => item ? Number(item.displayPrice ?? item.price) || 0 : 0;
   const totalPrice = cartItems.reduce((sum, item) => sum + effectivePrice(item) * (item?.quantity || 0), 0);
   const discount = Math.floor(totalPrice * 0.10); // 10% discount
@@ -316,20 +321,38 @@ export default function CartPage() {
     }
   }, []);
 
-  // Watch for country preference changes and sync cart items
+  // Keep cart country in sync with header preference (same tab + storage).
   useEffect(() => {
-    const handleCountryChange = () => {
-      const newCountry = getStoredCountry();
-      if (newCountry !== selectedCountry) {
-        setSelectedCountry(newCountry);
-        setSelectedPaymentMethod(isIndiaCountry(newCountry) ? 'domestic' : 'paypal');
-        syncCartWithCountry(newCountry);
-      }
+    const applyCountry = (newCountry: CountryCode) => {
+      if (newCountry === selectedCountry) return;
+      setSelectedCountry(newCountry);
+      setSelectedPaymentMethod(isIndiaCountry(newCountry) ? 'domestic' : 'paypal');
+      syncCartWithCountry(newCountry);
+    };
+
+    const handleCountryChange = () => applyCountry(getStoredCountry());
+    const handlePreferredCountryChanged = (event: Event) => {
+      const detailCountry = (event as CustomEvent<{ country?: string }>)?.detail?.country;
+      applyCountry(normalizeCountryCode(detailCountry || getStoredCountry()));
     };
 
     window.addEventListener('storage', handleCountryChange);
-    return () => window.removeEventListener('storage', handleCountryChange);
+    window.addEventListener('preferredCountryChanged', handlePreferredCountryChanged);
+    return () => {
+      window.removeEventListener('storage', handleCountryChange);
+      window.removeEventListener('preferredCountryChanged', handlePreferredCountryChanged);
+    };
   }, [selectedCountry]);
+
+  // Hook updates after mount / custom event — mirror into selectedCountry.
+  useEffect(() => {
+    const normalized = normalizeCountryCode(preferredCountry);
+    if (normalized && normalized !== selectedCountry) {
+      setSelectedCountry(normalized);
+      setSelectedPaymentMethod(isIndiaCountry(normalized) ? 'domestic' : 'paypal');
+      syncCartWithCountry(normalized);
+    }
+  }, [preferredCountry]);
 
   useEffect(() => {
     const loadPaypalConfig = async () => {
@@ -954,11 +977,12 @@ export default function CartPage() {
       return;
     }
 
-    // Shiprocket / Fastrr Checkout is INR-only (COD/UPI, ₹ UI). Opening it with a
-    // USD cart shows the same number as rupees (e.g. $16 → ₹16). Keep international
-    // checkouts in USD via the Buy Now → PayPal flow instead.
+    // Shiprocket / Fastrr Checkout is INR-only. International Fast Checkout stays
+    // in USD via address + PayPal (no India SMS OTP).
     if (!isIndia) {
-      handleBuyNow();
+      setSelectedPaymentMethod('paypal');
+      setIsOTPVerified(true);
+      setShowAddressForm(true);
       return;
     }
 
@@ -1235,22 +1259,11 @@ export default function CartPage() {
                     </div>
                   )}
 
-                  <button
-                    onClick={handleBuyNow}
-                    className="w-full bg-linear-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white py-3 rounded-lg font-bold transition"
-                  >
-                    {isOTPVerified ? '💳 Buy Now' : '🔐 Verify OTP & Buy'}
-                  </button>
-
-                  {/* India: Shiprocket when enabled. International: always show PayPal fast path. */}
-                  {(SRC_ENABLED || !isIndia) && (
+                  {/* International: Fast Checkout (PayPal) first so it is never missed. */}
+                  {!isIndia && (
                     <>
-                      <div className="flex items-center gap-3 my-4">
-                        <span className="h-px flex-1 bg-gray-200" />
-                        <span className="text-xs text-gray-400 font-medium">OR</span>
-                        <span className="h-px flex-1 bg-gray-200" />
-                      </div>
                       <button
+                        type="button"
                         onClick={handleShiprocketCheckout}
                         disabled={srcBusy}
                         className="w-full bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2"
@@ -1260,16 +1273,57 @@ export default function CartPage() {
                             <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                             Starting…
                           </>
-                        ) : isIndia ? (
-                          '⚡ Fast Checkout (Shiprocket)'
                         ) : (
                           '⚡ Fast Checkout (PayPal · USD)'
                         )}
                       </button>
+                      <p className="mt-2 mb-4 text-[11px] text-gray-400 text-center">
+                        International carts stay in USD — paid securely with PayPal
+                      </p>
+                      <div className="flex items-center gap-3 mb-4">
+                        <span className="h-px flex-1 bg-gray-200" />
+                        <span className="text-xs text-gray-400 font-medium">OR</span>
+                        <span className="h-px flex-1 bg-gray-200" />
+                      </div>
+                    </>
+                  )}
+
+                  <button
+                    onClick={handleBuyNow}
+                    className="w-full bg-linear-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white py-3 rounded-lg font-bold transition"
+                  >
+                    {!isIndia
+                      ? '💳 Buy Now (PayPal)'
+                      : isOTPVerified
+                        ? '💳 Buy Now'
+                        : '🔐 Verify OTP & Buy'}
+                  </button>
+
+                  {/* India only: Shiprocket Fast Checkout (env-gated). */}
+                  {isIndia && SRC_ENABLED && (
+                    <>
+                      <div className="flex items-center gap-3 my-4">
+                        <span className="h-px flex-1 bg-gray-200" />
+                        <span className="text-xs text-gray-400 font-medium">OR</span>
+                        <span className="h-px flex-1 bg-gray-200" />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleShiprocketCheckout}
+                        disabled={srcBusy}
+                        className="w-full bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2"
+                      >
+                        {srcBusy ? (
+                          <>
+                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                            Starting…
+                          </>
+                        ) : (
+                          '⚡ Fast Checkout (Shiprocket)'
+                        )}
+                      </button>
                       <p className="mt-2 text-[11px] text-gray-400 text-center">
-                        {isIndia
-                          ? 'Address & payment handled securely by Shiprocket Checkout'
-                          : 'International carts stay in USD — paid securely with PayPal'}
+                        Address & payment handled securely by Shiprocket Checkout
                       </p>
                     </>
                   )}

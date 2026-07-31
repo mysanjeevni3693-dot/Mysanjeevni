@@ -528,9 +528,23 @@ const COLOR_STYLES: Record<string, any> = {
   },
 };
 
+/** Top-level nav labels that must never appear (Disease replaces Medicines). */
+const EXCLUDED_NAV_CATEGORIES = new Set([
+  'medicines',
+  'medicine',
+  'generic medicine',
+  'generic medicines',
+  'allopathic medicines',
+]);
+
+const isExcludedNavCategory = (name: string) =>
+  EXCLUDED_NAV_CATEGORIES.has(normalizeName(name));
+
 export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }) {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
-  const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [categories, setCategories] = useState<Category[]>(() =>
+    CATEGORIES.filter((category) => !isExcludedNavCategory(category.name))
+  );
   const [categoryTree, setCategoryTree] = useState<CategoryTreeNode[] | null>(null);
 
   useEffect(() => {
@@ -548,16 +562,19 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
           if (configData?.success && active) {
             const dynamicGrouped = getDynamicGroupedByCategory(configData.config || {});
             setCategories((prev) =>
-              prev.map((category) => {
-                const groupedSubcategories = dynamicGrouped[category.name] || category.groupedSubcategories;
-                if (!groupedSubcategories) return category;
+              prev
+                .filter((category) => !isExcludedNavCategory(category.name))
+                .map((category) => {
+                  const groupedSubcategories =
+                    dynamicGrouped[category.name] || category.groupedSubcategories;
+                  if (!groupedSubcategories) return category;
 
-                return {
-                  ...category,
-                  groupedSubcategories,
-                  subcategories: buildFlatSubcategories(groupedSubcategories),
-                };
-              })
+                  return {
+                    ...category,
+                    groupedSubcategories,
+                    subcategories: buildFlatSubcategories(groupedSubcategories),
+                  };
+                })
             );
           }
         }
@@ -579,6 +596,10 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
       active = false;
     };
   }, []);
+
+  const visibleCategories = categories.filter(
+    (category) => !isExcludedNavCategory(category.name)
+  );
 
   const buildHref = (path: string, params?: Record<string, string>) => {
     const query = new URLSearchParams(params).toString();
@@ -625,7 +646,7 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
     // Mobile menu version - expanded categories
     return (
       <div className="space-y-2 pb-2">
-        {categories.map((category) => (
+        {visibleCategories.map((category) => (
           <div key={category.name} className="border-b border-gray-100">
             <Link
               href={getCategoryHref(category)}
@@ -663,11 +684,11 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
   // Desktop menu version - with hover dropdowns
   return (
     <div className="hidden md:flex gap-0 mt-4 text-xs text-gray-700 border-t border-gray-100 pt-2 flex-nowrap relative pb-2 overflow-visible justify-center">
-      {categories.map((category, index) => {
+      {visibleCategories.map((category, index) => {
         const dropdownPositionClass =
           index <= 2
             ? 'left-0'
-            : index >= categories.length - 2
+            : index >= visibleCategories.length - 2
               ? 'right-0'
               : 'left-1/2 -translate-x-1/2';
 
