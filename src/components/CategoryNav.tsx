@@ -35,18 +35,22 @@ const CATEGORY_TREE_ROOT_ALIASES: Record<string, string[]> = {
 const normalizeName = (value: string) => String(value || '').trim().toLowerCase();
 
 const findTreeNodeByName = (
-  nodes: CategoryTreeNode[],
+  nodes: CategoryTreeNode[] | null | undefined,
   targetName: string
 ): CategoryTreeNode | null => {
+  if (!Array.isArray(nodes) || nodes.length === 0) return null;
   const normalizedTarget = normalizeName(targetName);
   const stack = [...nodes];
 
   while (stack.length) {
-    const node = stack.shift()!;
+    const node = stack.shift();
+    if (!node || typeof node !== 'object') continue;
     if (normalizeName(node.name) === normalizedTarget) {
       return node;
     }
-    stack.push(...node.children);
+    if (Array.isArray(node.children) && node.children.length > 0) {
+      stack.push(...node.children);
+    }
   }
 
   return null;
@@ -619,8 +623,8 @@ function CategoryNavInner({ isMobile = false }: { isMobile?: boolean }) {
 
         if (treeResponse.ok) {
           const treeData = await treeResponse.json();
-          if (treeData?.success && active) {
-            setCategoryTree(treeData.tree || []);
+          if (treeData?.success && active && Array.isArray(treeData.tree)) {
+            setCategoryTree(treeData.tree);
           }
         }
       } catch {
@@ -693,7 +697,9 @@ function CategoryNavInner({ isMobile = false }: { isMobile?: boolean }) {
               <span>{category.name}</span>
             </Link>
             <div className="pl-6 space-y-1">
-              {category.subcategories.slice(1, 6).map((subcat, idx) => {
+              {(Array.isArray(category.subcategories) ? category.subcategories : [])
+                .slice(1, 6)
+                .map((subcat, idx) => {
                 return (
                   <Link
                     key={`${category.name}-${subcat}-${idx}`}
@@ -704,7 +710,7 @@ function CategoryNavInner({ isMobile = false }: { isMobile?: boolean }) {
                   </Link>
                 );
               })}
-              {category.subcategories.length > 6 && (
+              {(Array.isArray(category.subcategories) ? category.subcategories : []).length > 6 && (
                 <Link
                   href={getCategoryHref(category)}
                   className="text-xs text-emerald-600 hover:text-orange-500 font-semibold py-1"
@@ -721,11 +727,21 @@ function CategoryNavInner({ isMobile = false }: { isMobile?: boolean }) {
 
   // Desktop menu version - with hover dropdowns
   return (
-    <div className="hidden md:flex gap-0 mt-4 text-xs text-gray-700 border-t border-gray-100 pt-2 flex-nowrap relative pb-2 overflow-visible justify-center">
+    <div
+      className="hidden md:flex gap-0 mt-4 text-xs text-gray-700 border-t border-gray-100 pt-2 flex-nowrap relative pb-2 overflow-visible justify-center"
+      data-nav-version="safe-v2"
+    >
       {visibleCategories.map((category, index) => {
         const styles = getColorStyles(category.color);
         const grouped = sanitizeGroupedSubcategories(category.groupedSubcategories);
-        const treeChildren = getTreeNodeForCategory(categoryTree, category.name)?.children;
+        // Prefer sanitized grouped maps over live tree (tree can throw on malformed nodes).
+        let treeChildren: CategoryTreeNode[] | undefined;
+        try {
+          const children = getTreeNodeForCategory(categoryTree, category.name)?.children;
+          treeChildren = Array.isArray(children) ? children : undefined;
+        } catch {
+          treeChildren = undefined;
+        }
         const dropdownPositionClass =
           index <= 2
             ? 'left-0'
@@ -752,7 +768,7 @@ function CategoryNavInner({ isMobile = false }: { isMobile?: boolean }) {
           <div
             className={`absolute ${dropdownPositionClass} mt-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50`}
           >
-            {category.name !== 'Disease' && Array.isArray(treeChildren) && treeChildren.length > 0 ? (
+            {category.name !== 'Disease' && Array.isArray(treeChildren) && treeChildren.length > 0 && !grouped ? (
               renderTreeDropdown(treeChildren, category.name, category.color)
             ) : grouped ? (
               <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-5" style={{ width: '780px', maxWidth: '80vw' }}>

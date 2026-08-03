@@ -239,31 +239,32 @@ export default function Header() {
   useEffect(() => {
     // Mark component as mounted to prevent hydration mismatch
     setIsMounted(true);
-    
-    // Get user data from localStorage
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      setUser(JSON.parse(userStr));
-    }
 
-    // Get cart count
-    const cartStr = localStorage.getItem('cart');
-    if (cartStr) {
-      const cart = JSON.parse(cartStr);
-      const count = cart.reduce((sum: number, item: any) => sum + (item?.quantity || 0), 0);
-      setCartCount(count);
-    }
-
-    // Listen for storage changes (cart updates from other components)
-    const handleStorageChange = () => {
-      const cartStr = localStorage.getItem('cart');
-      if (cartStr) {
+    const readCartCount = () => {
+      try {
+        const cartStr = localStorage.getItem('cart');
+        if (!cartStr) return 0;
         const cart = JSON.parse(cartStr);
-        const count = cart.reduce((sum: number, item: any) => sum + (item?.quantity || 0), 0);
-        setCartCount(count);
-      } else {
-        setCartCount(0);
+        if (!Array.isArray(cart)) return 0;
+        return cart.reduce((sum: number, item: any) => sum + (item?.quantity || 0), 0);
+      } catch {
+        return 0;
       }
+    };
+
+    try {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        setUser(JSON.parse(userStr));
+      }
+    } catch {
+      localStorage.removeItem('user');
+    }
+
+    setCartCount(readCartCount());
+
+    const handleStorageChange = () => {
+      setCartCount(readCartCount());
     };
 
     window.addEventListener('storage', handleStorageChange);
