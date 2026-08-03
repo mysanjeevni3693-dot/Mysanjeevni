@@ -4,6 +4,10 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'] });
 
+// Prevent Hostinger/CDN from serving stale HTML that references deleted JS chunks.
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata: Metadata = {
   title: 'MySanjeevni Healthcare Platform',
   description: 'Healthcare platform providing medicines and health services',
