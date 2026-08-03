@@ -291,8 +291,14 @@ export const checkoutTokenSchema = z.object({
   /**
    * Flat delivery charge from our cart (Delhi NCR ₹50 / rest of India ₹79 /
    * international ₹0). Forwarded into Shiprocket Checkout so totals match.
+   * Server recomputes from deliveryPincode when provided so free-shipping
+   * dashboard rules cannot zero out India delivery.
    */
   shippingCharges: z.number().nonnegative().optional().default(0),
+  /** Delivery location used to compute India flat shipping server-side. */
+  deliveryPincode: z.string().trim().optional().default(''),
+  deliveryCity: z.string().trim().optional().default(''),
+  deliveryState: z.string().trim().optional().default(''),
   /** Optional fixed cart discount / coupon. */
   coupon: z
     .object({

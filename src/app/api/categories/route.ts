@@ -87,6 +87,16 @@ async function ensureEssentialCategories() {
     (await CategoryNode.findOne({ name: 'Product Type', parentId: null }));
   if (!productRoot) return;
 
+  // Hide legacy top-level "Medicines" / "Generic Medicine" product types from the tree
+  // so storefront never resurfaces them (Disease is the public nav replacement).
+  await CategoryNode.updateMany(
+    {
+      parentId: productRoot._id,
+      name: { $in: ['Medicines', 'Medicine', 'Generic Medicine', 'Generic Medicines', 'Allopathic Medicines'] },
+    },
+    { $set: { isActive: false } }
+  );
+
   const nutritionType = await CategoryNode.findOne({
     name: 'Nutrition',
     parentId: productRoot._id,

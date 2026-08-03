@@ -18,6 +18,7 @@ import {
 } from './config';
 import { ShiprocketError, mapStatusToErrorCode } from './errors';
 import { shiprocketLogger } from './logger';
+import { getIndiaFlatShippingCharge, INDIA_SHIPPING_REST } from '@/lib/shippingRates';
 import {
   CHECKOUT_DELIVERY_VARIANT_ID,
   CHECKOUT_DELIVERY_VARIANT_IDS,
@@ -114,12 +115,23 @@ export async function createCheckoutToken(
 
   // Keep the access-token payload minimal — extra shipping/currency fields cause
   // Fastrr to return HTTP 500. Delivery is injected as a normal catalog line item.
-  const envDefaultShipping =
-    Number(shiprocketConfig.defaultShippingCharge || process.env.DEFAULT_SHIPPING_CHARGE || 50) || 50;
-  const requestedShipping = Math.max(0, Number(input.shippingCharges || 0) || 0);
   const isInr = (input.currency || 'INR').toUpperCase() === 'INR';
-  const shippingCharges =
-    requestedShipping > 0 ? requestedShipping : isInr ? Math.max(0, envDefaultShipping) : 0;
+  const requestedShipping = Math.max(0, Number(input.shippingCharges || 0) || 0);
+  // Delhi NCR ₹50 / rest of India ₹79. Never allow INR Fast Checkout at ₹0 —
+  // Shiprocket dashboard "free shipping" must not wipe our delivery line item.
+  const locationShipping = isInr
+    ? getIndiaFlatShippingCharge({
+        pincode: input.deliveryPincode,
+        city: input.deliveryCity,
+        state: input.deliveryState,
+      })
+    : 0;
+  let shippingCharges = 0;
+  if (isInr) {
+    shippingCharges = locationShipping > 0 ? locationShipping : INDIA_SHIPPING_REST;
+    if (requestedShipping > shippingCharges) shippingCharges = requestedShipping;
+    if (shippingCharges <= 0) shippingCharges = INDIA_SHIPPING_REST;
+  }
 
   const items = input.items.map((item) => ({
     variant_id: item.variantId,

@@ -193,13 +193,22 @@ export default function CartPage() {
   const discount = Math.floor(totalPrice * 0.10); // 10% discount
   const finalPrice = totalPrice - discount;
   // Business rule: Delhi NCR ₹50, rest of India ₹79. International: free shipping.
+  // Charge updates whenever the customer enters city / state / pincode.
   const flatIndiaShipping = getIndiaFlatShippingCharge({
     city: address.city,
     state: address.state,
     pincode: address.postalCode,
   });
+  const hasDeliveryPincode = /^\d{6}$/.test(String(address.postalCode || '').trim());
   const deliveryCharge = isIndia ? flatIndiaShipping : 0;
   const totalAmount = finalPrice + deliveryCharge;
+  const deliveryZoneLabel = !isIndia
+    ? 'FREE'
+    : !hasDeliveryPincode && !String(address.city || '').trim()
+      ? 'Enter pincode (default ₹79)'
+      : flatIndiaShipping === 50
+        ? 'Delhi NCR ₹50'
+        : 'Other India ₹79';
 
   // International / USD carts never use India SMS OTP.
   useEffect(() => {
@@ -1036,6 +1045,13 @@ export default function CartPage() {
       return;
     }
 
+    // Location-based shipping needs a pincode so Fast Checkout is not free for all cities.
+    if (!/^\d{6}$/.test(String(address.postalCode || '').trim())) {
+      alert('Please enter your 6-digit delivery pincode first so we can calculate shipping charges.');
+      setShowAddressForm(true);
+      return;
+    }
+
     setSrcBusy(true);
     try {
       const items = cartItems
@@ -1060,11 +1076,12 @@ export default function CartPage() {
       // so Fast Checkout totals match the cart (Shiprocket dashboard free-shipping
       // rules must not zero out our flat India rates).
       const coupon = discount > 0 ? { code: 'MYSANJEEVNI10', amount: discount } : undefined;
-      // Never send 0 for India — server also falls back to DEFAULT_SHIPPING_CHARGE.
-      const checkoutShipping = deliveryCharge > 0 ? deliveryCharge : flatIndiaShipping || 50;
+      // Never send 0 for India — server recomputes from pincode (NCR ₹50 / rest ₹79).
+      const checkoutShipping = deliveryCharge > 0 ? deliveryCharge : flatIndiaShipping || 79;
       customAttributes.shipping_charges = String(checkoutShipping);
       customAttributes.delivery_city = String(address.city || '');
       customAttributes.delivery_pincode = String(address.postalCode || '');
+      customAttributes.delivery_state = String(address.state || '');
 
       const res = await fetch('/api/shiprocket/checkout/token', {
         method: 'POST',
@@ -1073,6 +1090,9 @@ export default function CartPage() {
           items,
           currency: 'INR',
           shippingCharges: checkoutShipping,
+          deliveryPincode: String(address.postalCode || ''),
+          deliveryCity: String(address.city || ''),
+          deliveryState: String(address.state || ''),
           ...(coupon ? { coupon } : {}),
           customAttributes,
         }),
@@ -1278,20 +1298,44 @@ export default function CartPage() {
                       <span className="font-semibold">{currencySymbol}{finalPrice.toFixed(2)}</span>
                     </div>
 
+                    {isIndia && (
+                      <div className="rounded-lg border border-emerald-100 bg-white p-3 space-y-2">
+                        <label className="block text-xs font-semibold text-gray-700">
+                          Delivery pincode
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={address.postalCode}
+                          onChange={(e) => {
+                            const postalCode = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            setAddress((prev) => ({ ...prev, postalCode }));
+                            if (/^\d{6}$/.test(postalCode)) {
+                              checkPincodeServiceability(postalCode);
+                            }
+                          }}
+                          placeholder="Enter 6-digit pincode"
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        />
+                        <p className="text-[11px] text-gray-500">
+                          Delhi NCR: ₹50 · Rest of India: ₹79
+                          {shippingInfo.serviceable && shippingInfo.etd
+                            ? ` · Est. delivery: ${shippingInfo.etd}`
+                            : ''}
+                        </p>
+                      </div>
+                    )}
+
                     <div className="flex justify-between items-center text-gray-700">
                       <span>
                         Delivery{' '}
-                        {isIndia ? (
-                          <span className="text-xs text-gray-500">
-                            ({flatIndiaShipping === 50 ? 'Delhi NCR ₹50' : 'India ₹79'})
-                          </span>
-                        ) : deliveryCharge === 0 ? (
-                          <span className="text-green-600 font-semibold text-xs">(FREE)</span>
-                        ) : null}
-                        :
+                        <span className="text-xs text-gray-500">({deliveryZoneLabel})</span>:
                       </span>
                       <span className="font-semibold">
-                        {deliveryCharge === 0 ? 'FREE' : `${currencySymbol}${deliveryCharge}`}
+                        {!isIndia || deliveryCharge === 0
+                          ? 'FREE'
+                          : `${currencySymbol}${deliveryCharge}`}
                       </span>
                     </div>
                   </div>

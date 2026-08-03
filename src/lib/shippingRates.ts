@@ -87,13 +87,8 @@ export function getIndiaFlatShippingCharge(input?: {
   const hasLocationHint = Boolean(city || state || pincode.length >= 3);
 
   if (!hasLocationHint) {
-    // Match DEFAULT_SHIPPING_CHARGE from env when address is not filled yet.
-    const fromEnv = Number(
-      process.env.NEXT_PUBLIC_DEFAULT_SHIPPING_CHARGE ||
-        process.env.DEFAULT_SHIPPING_CHARGE ||
-        INDIA_SHIPPING_NCR
-    );
-    return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : INDIA_SHIPPING_NCR;
+    // No pincode/city yet — charge rest-of-India rate (never free / never assume NCR).
+    return INDIA_SHIPPING_REST;
   }
 
   return isDelhiNcrAddress(input) ? INDIA_SHIPPING_NCR : INDIA_SHIPPING_REST;

@@ -535,10 +535,19 @@ const EXCLUDED_NAV_CATEGORIES = new Set([
   'generic medicine',
   'generic medicines',
   'allopathic medicines',
+  'allopathic medicine',
+  'general medicines',
+  'general medicine',
 ]);
 
-const isExcludedNavCategory = (name: string) =>
-  EXCLUDED_NAV_CATEGORIES.has(normalizeName(name));
+const isExcludedNavCategory = (name: string) => {
+  const normalized = normalizeName(name);
+  if (EXCLUDED_NAV_CATEGORIES.has(normalized)) return true;
+  // Catch variants like "Medicines Store", "Our Medicines", etc.
+  if (normalized === 'medicines' || normalized.startsWith('medicines ')) return true;
+  if (normalized.endsWith(' medicines') && !normalized.includes('unani')) return true;
+  return false;
+};
 
 export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }) {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);

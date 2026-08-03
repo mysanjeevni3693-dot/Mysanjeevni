@@ -592,7 +592,7 @@ export default function DoctorPanelPage() {
                     <h2 className="text-xl font-bold text-slate-900 mt-1">{doctorProfile?.name}</h2>
                     <p className="text-sm text-slate-600">{doctorProfile?.email}</p>
                     <p className="text-xs text-slate-500 mt-2">
-                      Who can edit profile: logged-in doctor (this account) and admin.
+                      You can edit your consultation fee and profile details anytime.
                     </p>
                     <p className="text-sm mt-2 text-slate-700">
                       Status:{' '}
@@ -608,6 +608,31 @@ export default function DoctorPanelPage() {
                     </p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileForm({
+                      name: doctorProfile?.name || '',
+                      phone: doctorProfile?.phone || '',
+                      department: doctorProfile?.department || 'General Medicine',
+                      specialization: doctorProfile?.specialization || '',
+                      experience: doctorProfile?.experience || 0,
+                      qualification: doctorProfile?.qualification || '',
+                      bio: doctorProfile?.bio || '',
+                      consultationFee: Number(doctorProfile?.consultationFee) || 0,
+                      availableDates: Array.isArray(doctorProfile?.availableDates)
+                        ? doctorProfile.availableDates
+                        : [],
+                      avatar: doctorProfile?.avatar || '👨‍⚕️',
+                      isAvailable: doctorProfile?.isAvailable !== false,
+                    });
+                    setProfileError('');
+                    setShowProfileModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+                >
+                  Edit Profile & Fees
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
