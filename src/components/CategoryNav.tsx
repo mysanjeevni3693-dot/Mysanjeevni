@@ -412,16 +412,17 @@ const CATEGORIES: Category[] = [
 
 /** Normalize dynamic category maps so desktop mega-menu never crashes on bad API data. */
 const sanitizeGroupedSubcategories = (
-  grouped?: Record<string, string[]> | null
+  grouped?: Record<string, unknown> | Record<string, string[]> | null
 ): Record<string, string[]> | undefined => {
   if (!grouped || typeof grouped !== 'object') return undefined;
   const next: Record<string, string[]> = {};
-  for (const [key, value] of Object.entries(grouped)) {
+  for (const [key, value] of Object.entries(grouped as Record<string, unknown>)) {
     if (!key) continue;
     if (Array.isArray(value)) {
-      next[key] = value.map((item) => String(item || '').trim()).filter(Boolean);
-    } else if (typeof value === 'string' && value.trim()) {
-      next[key] = [value.trim()];
+      next[key] = value.map((item) => String(item ?? '').trim()).filter(Boolean);
+    } else if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) next[key] = [trimmed];
     }
   }
   return Object.keys(next).length > 0 ? next : undefined;
