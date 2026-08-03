@@ -200,12 +200,13 @@ export default function CartPage() {
     pincode: address.postalCode,
   });
   const hasDeliveryPincode = /^\d{6}$/.test(String(address.postalCode || '').trim());
-  const deliveryCharge = isIndia ? flatIndiaShipping : 0;
+  // India: always charge location flat rate (never ₹0). International: free.
+  const deliveryCharge = isIndia ? Math.max(flatIndiaShipping, 50) : 0;
   const totalAmount = finalPrice + deliveryCharge;
   const deliveryZoneLabel = !isIndia
-    ? 'FREE'
-    : !hasDeliveryPincode && !String(address.city || '').trim()
-      ? 'Enter pincode (default ₹79)'
+    ? 'FREE international'
+    : !hasDeliveryPincode
+      ? 'Enter pincode to confirm (₹79 until then)'
       : flatIndiaShipping === 50
         ? 'Delhi NCR ₹50'
         : 'Other India ₹79';
@@ -1076,8 +1077,8 @@ export default function CartPage() {
       // so Fast Checkout totals match the cart (Shiprocket dashboard free-shipping
       // rules must not zero out our flat India rates).
       const coupon = discount > 0 ? { code: 'MYSANJEEVNI10', amount: discount } : undefined;
-      // Never send 0 for India — server recomputes from pincode (NCR ₹50 / rest ₹79).
-      const checkoutShipping = deliveryCharge > 0 ? deliveryCharge : flatIndiaShipping || 79;
+      // Never send 0 for India — server also recomputes from pincode (NCR ₹50 / rest ₹79).
+      const checkoutShipping = Math.max(Number(deliveryCharge) || 0, Number(flatIndiaShipping) || 0, 50);
       customAttributes.shipping_charges = String(checkoutShipping);
       customAttributes.delivery_city = String(address.city || '');
       customAttributes.delivery_pincode = String(address.postalCode || '');
@@ -1277,9 +1278,9 @@ export default function CartPage() {
                 )}
               </div>
 
-              {/* Price Summary */}
-              <div className="lg:col-span-1">
-                <div className="bg-linear-to-b from-emerald-50 to-white border border-emerald-200 rounded-lg p-6 sticky top-24">
+              {/* Price Summary — sticky on desktop so pincode/shipping stay visible */}
+              <div className="lg:col-span-1 w-full">
+                <div className="bg-linear-to-b from-emerald-50 to-white border border-emerald-200 rounded-lg p-6 lg:sticky lg:top-24">
                   <h3 className="text-lg font-bold text-gray-900 mb-6">Order Summary</h3>
 
                   <div className="space-y-4 mb-6 pb-6 border-b border-gray-200">

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 
 interface Category {
   name: string;
@@ -99,13 +99,16 @@ const getTreeNodeHref = (categoryName: string, path: string[]) => {
 };
 
 const renderTreeNodes = (
-  nodes: CategoryTreeNode[],
+  nodes: CategoryTreeNode[] | undefined | null,
   categoryName: string,
   ancestry: string[] = [],
   depth = 0
 ): React.ReactNode[] => {
+  if (!Array.isArray(nodes) || nodes.length === 0) return [];
+
   return nodes.map((node) => {
     const path = [...ancestry, node.name];
+    const children = Array.isArray(node.children) ? node.children : [];
     return (
       <div key={`${path.join('>')}`} className="space-y-1">
         <Link
@@ -117,9 +120,9 @@ const renderTreeNodes = (
           {node.name}
         </Link>
 
-        {node.children.length > 0 && (
+        {children.length > 0 && (
           <div className={`mt-2 space-y-1 ${depth >= 0 ? 'pl-4' : ''}`}>
-            {renderTreeNodes(node.children, categoryName, path, depth + 1)}
+            {renderTreeNodes(children, categoryName, path, depth + 1)}
           </div>
         )}
       </div>
@@ -128,13 +131,16 @@ const renderTreeNodes = (
 };
 
 const renderTreeDropdown = (
-  treeNodes: CategoryTreeNode[],
+  treeNodes: CategoryTreeNode[] | undefined | null,
   categoryName: string,
   color: string
 ) => {
+  const styles = getColorStyles(color);
+  const groups = Array.isArray(treeNodes) ? treeNodes : [];
+
   return (
     <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-5" style={{ width: '780px', maxWidth: '80vw' }}>
-      <h3 className={`text-base font-semibold mb-4 pb-3 border-b border-gray-200 ${COLOR_STYLES[color].text}`}>
+      <h3 className={`text-base font-semibold mb-4 pb-3 border-b border-gray-200 ${styles.text}`}>
         {categoryName}
       </h3>
       <div className="overflow-x-auto pb-1">
@@ -146,11 +152,11 @@ const renderTreeDropdown = (
             maxHeight: '440px',
           }}
         >
-          {treeNodes.map((group) => (
+          {groups.map((group) => (
             <div key={group.name} className="min-w-0">
               <Link
                 href={getTreeNodeHref(categoryName, [group.name])}
-                className={`block text-sm font-semibold mb-2 ${COLOR_STYLES[color].text} hover:text-orange-500 truncate`}
+                className={`block text-sm font-semibold mb-2 ${styles.text} hover:text-orange-500 truncate`}
               >
                 {group.name}
               </Link>
@@ -404,9 +410,27 @@ const CATEGORIES: Category[] = [
   },
 ];
 
+/** Normalize dynamic category maps so desktop mega-menu never crashes on bad API data. */
+const sanitizeGroupedSubcategories = (
+  grouped?: Record<string, string[]> | null
+): Record<string, string[]> | undefined => {
+  if (!grouped || typeof grouped !== 'object') return undefined;
+  const next: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(grouped)) {
+    if (!key) continue;
+    if (Array.isArray(value)) {
+      next[key] = value.map((item) => String(item || '').trim()).filter(Boolean);
+    } else if (typeof value === 'string' && value.trim()) {
+      next[key] = [value.trim()];
+    }
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+};
+
 const buildFlatSubcategories = (groupedSubcategories?: Record<string, string[]>) => {
-  if (!groupedSubcategories) return [];
-  return ['All', ...Object.values(groupedSubcategories).flat()];
+  const safe = sanitizeGroupedSubcategories(groupedSubcategories);
+  if (!safe) return ['All'];
+  return ['All', ...Object.values(safe).flat()];
 };
 
 const toSingleGroup = (groupName: string, values?: string[]) => {
@@ -528,6 +552,9 @@ const COLOR_STYLES: Record<string, any> = {
   },
 };
 
+const getColorStyles = (color?: string) =>
+  COLOR_STYLES[String(color || '')] || COLOR_STYLES.emerald;
+
 /** Top-level nav labels that must never appear (Disease replaces Medicines). */
 const EXCLUDED_NAV_CATEGORIES = new Set([
   'medicines',
@@ -549,7 +576,7 @@ const isExcludedNavCategory = (name: string) => {
   return false;
 };
 
-export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }) {
+function CategoryNavInner({ isMobile = false }: { isMobile?: boolean }) {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>(() =>
     CATEGORIES.filter((category) => !isExcludedNavCategory(category.name))
@@ -574,8 +601,9 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
               prev
                 .filter((category) => !isExcludedNavCategory(category.name))
                 .map((category) => {
-                  const groupedSubcategories =
-                    dynamicGrouped[category.name] || category.groupedSubcategories;
+                  const groupedSubcategories = sanitizeGroupedSubcategories(
+                    dynamicGrouped[category.name] || category.groupedSubcategories
+                  );
                   if (!groupedSubcategories) return category;
 
                   return {
@@ -694,6 +722,9 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
   return (
     <div className="hidden md:flex gap-0 mt-4 text-xs text-gray-700 border-t border-gray-100 pt-2 flex-nowrap relative pb-2 overflow-visible justify-center">
       {visibleCategories.map((category, index) => {
+        const styles = getColorStyles(category.color);
+        const grouped = sanitizeGroupedSubcategories(category.groupedSubcategories);
+        const treeChildren = getTreeNodeForCategory(categoryTree, category.name)?.children;
         const dropdownPositionClass =
           index <= 2
             ? 'left-0'
@@ -711,7 +742,7 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
           {/* Category Button */}
           <Link
             href={getCategoryHref(category)}
-            className={`inline-flex items-center gap-1 px-2 py-1 rounded transition-all duration-200 ${COLOR_STYLES[category.color].text} ${COLOR_STYLES[category.color].hover} hover:text-orange-500 whitespace-nowrap text-xs`}
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded transition-all duration-200 ${styles.text} ${styles.hover} hover:text-orange-500 whitespace-nowrap text-xs`}
           >
             <span className="font-medium">{category.name}</span>
           </Link>
@@ -720,12 +751,11 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
           <div
             className={`absolute ${dropdownPositionClass} mt-0 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50`}
           >
-            {category.name !== 'Disease' &&
-            getTreeNodeForCategory(categoryTree, category.name)?.children?.length ? (
-              renderTreeDropdown(getTreeNodeForCategory(categoryTree, category.name)!.children, category.name, category.color)
-            ) : category.groupedSubcategories ? (
+            {category.name !== 'Disease' && Array.isArray(treeChildren) && treeChildren.length > 0 ? (
+              renderTreeDropdown(treeChildren, category.name, category.color)
+            ) : grouped ? (
               <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-5" style={{ width: '780px', maxWidth: '80vw' }}>
-                <h3 className={`text-base font-semibold mb-4 pb-3 border-b border-gray-200 ${COLOR_STYLES[category.color].text}`}>
+                <h3 className={`text-base font-semibold mb-4 pb-3 border-b border-gray-200 ${styles.text}`}>
                   {category.name}
                 </h3>
                 <div className="overflow-x-auto pb-1">
@@ -737,16 +767,16 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
                       maxHeight: '440px',
                     }}
                   >
-                    {Object.entries(category.groupedSubcategories).map(([groupName, subcats]) => (
+                    {Object.entries(grouped).map(([groupName, subcats]) => (
                       <div key={groupName} className="min-w-0">
                         <Link
                           href={getSubcategoryHref(category.name, groupName)}
-                          className={`block text-sm font-semibold mb-2 ${COLOR_STYLES[category.color].text} hover:text-orange-500 truncate`}
+                          className={`block text-sm font-semibold mb-2 ${styles.text} hover:text-orange-500 truncate`}
                         >
                           {groupName}
                         </Link>
                         <div className="space-y-1">
-                          {subcats.map((subcat) => (
+                          {(Array.isArray(subcats) ? subcats : []).map((subcat) => (
                             <Link
                               key={`${groupName}-${subcat}`}
                               href={getSubcategoryHref(category.name, subcat)}
@@ -763,14 +793,14 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
               </div>
             ) : (
               <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.25rem', width: 'fit-content', maxWidth: '500px' }}>
-                {category.subcategories.map((subcat, idx) => (
+                {(Array.isArray(category.subcategories) ? category.subcategories : ['All']).map((subcat, idx) => (
                   <Link
                     key={`${category.name}-${subcat}-${idx}`}
                     href={subcat === 'All' ? getCategoryHref(category) : getSubcategoryHref(category.name, subcat)}
                     className={`text-center px-2 py-2 text-sm rounded transition-colors duration-150 ${
                       idx === 0
-                        ? `${COLOR_STYLES[category.color].text} font-semibold col-span-full mb-2 pb-3 border-b border-gray-200 ${COLOR_STYLES[category.color].hover}`
-                        : `text-gray-700 hover:${COLOR_STYLES[category.color].subcategoryBg} hover:rounded`
+                        ? `${styles.text} font-semibold col-span-full mb-2 pb-3 border-b border-gray-200 ${styles.hover}`
+                        : 'text-gray-700 hover:bg-emerald-50 hover:rounded'
                     }`}
                   >
                     {subcat}
@@ -799,5 +829,53 @@ export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }
         </Link>
       </div>
     </div>
+  );
+}
+
+/** Prevent a nav-only crash from blanking the entire desktop site. */
+class CategoryNavErrorBoundary extends Component<
+  { children: ReactNode; isMobile?: boolean },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[CategoryNav] render failed', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.isMobile) {
+        return (
+          <div className="space-y-2 pb-2">
+            <Link href="/ayurveda" className="block py-2 text-emerald-700 font-medium">Ayurveda</Link>
+            <Link href="/homeopathy" className="block py-2 text-emerald-700 font-medium">Homeopathy</Link>
+            <Link href="/medicines?category=disease" className="block py-2 text-emerald-700 font-medium">Disease</Link>
+          </div>
+        );
+      }
+      return (
+        <div className="hidden md:flex gap-3 mt-4 text-xs border-t border-gray-100 pt-2 justify-center">
+          <Link href="/ayurveda" className="px-2 py-1 text-emerald-700 font-medium">Ayurveda</Link>
+          <Link href="/homeopathy" className="px-2 py-1 text-emerald-700 font-medium">Homeopathy</Link>
+          <Link href="/medicines?category=disease" className="px-2 py-1 text-emerald-700 font-medium">Disease</Link>
+          <Link href="/doctor-consultation" className="px-2 py-1 text-emerald-700 font-medium">Consult Doctor</Link>
+          <Link href="/lab-tests" className="px-2 py-1 text-emerald-700 font-medium">Lab Tests</Link>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function CategoryNav({ isMobile = false }: { isMobile?: boolean }) {
+  return (
+    <CategoryNavErrorBoundary isMobile={isMobile}>
+      <CategoryNavInner isMobile={isMobile} />
+    </CategoryNavErrorBoundary>
   );
 }
