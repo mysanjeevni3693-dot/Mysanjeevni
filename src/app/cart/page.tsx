@@ -1106,6 +1106,8 @@ export default function CartPage() {
         return;
       }
 
+      const appliedShipping = Number(data?.data?.shippingCharges ?? checkoutShipping) || checkoutShipping;
+
       const loaded = await loadShiprocketCheckoutScript();
       if (!loaded || !window.HeadlessCheckout) {
         alert('Checkout is temporarily unavailable. Please try another payment option.');
@@ -1113,10 +1115,16 @@ export default function CartPage() {
       }
 
       const fallbackUrl = `${window.location.origin}/cart`;
+      // HeadlessCheckout expects a trusted browser click event.
       window.HeadlessCheckout.addToCart(event.nativeEvent, data.data.token, {
         fallbackUrl,
         isInitiatedFromApp: false,
       });
+
+      // Surface the shipping that was baked into the token (visible after pincode).
+      if (appliedShipping > 0) {
+        console.info('[Fast Checkout] shipping included in total:', appliedShipping);
+      }
     } catch {
       alert('Something went wrong starting checkout. Please try again.');
     } finally {
@@ -1333,12 +1341,22 @@ export default function CartPage() {
                         Delivery{' '}
                         <span className="text-xs text-gray-500">({deliveryZoneLabel})</span>:
                       </span>
-                      <span className="font-semibold">
-                        {!isIndia || deliveryCharge === 0
-                          ? 'FREE'
-                          : `${currencySymbol}${deliveryCharge}`}
+                      <span className="font-semibold text-emerald-700">
+                        {isIndia
+                          ? `${currencySymbol}${deliveryCharge}`
+                          : 'FREE'}
                       </span>
                     </div>
+                    {isIndia && hasDeliveryPincode && (
+                      <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-1.5">
+                        Shipping ₹{deliveryCharge} confirmed for pincode {address.postalCode} and will be added to your Fast Checkout total.
+                      </p>
+                    )}
+                    {isIndia && !hasDeliveryPincode && (
+                      <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+                        Enter your 6-digit pincode above to confirm shipping (Delhi NCR ₹50 · Rest of India ₹79). Required for Fast Checkout.
+                      </p>
+                    )}
                   </div>
 
                   <div className="flex justify-between items-center mb-6 text-lg">
@@ -1397,7 +1415,7 @@ export default function CartPage() {
                       <button
                         type="button"
                         onClick={handleShiprocketCheckout}
-                        disabled={srcBusy}
+                        disabled={srcBusy || !hasDeliveryPincode}
                         className="w-full bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-60 text-white py-3 rounded-lg font-bold transition flex items-center justify-center gap-2"
                       >
                         {srcBusy ? (
@@ -1406,11 +1424,13 @@ export default function CartPage() {
                             Starting…
                           </>
                         ) : (
-                          '⚡ Fast Checkout (Shiprocket)'
+                          `⚡ Fast Checkout · Total ${currencySymbol}${totalAmount.toFixed(2)}`
                         )}
                       </button>
                       <p className="mt-2 text-[11px] text-gray-400 text-center">
-                        Address & payment handled securely by Shiprocket Checkout
+                        {hasDeliveryPincode
+                          ? `Includes delivery ₹${deliveryCharge} for pincode ${address.postalCode}`
+                          : 'Enter delivery pincode in Order Summary first'}
                       </p>
                     </>
                   )}
@@ -1634,6 +1654,7 @@ export default function CartPage() {
                       Shipping charge:{' '}
                       <span className="font-semibold">₹{flatIndiaShipping}</span>
                       {' '}({flatIndiaShipping === 50 ? 'Delhi NCR' : 'Rest of India'})
+                      {' · '}added to order total (₹{totalAmount.toFixed(2)})
                     </p>
                     {/^\d{6}$/.test(address.postalCode) && (
                       <>

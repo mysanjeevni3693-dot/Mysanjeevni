@@ -9,6 +9,12 @@ import SocialToggle from '@/components/SocialToggle';
 import { Suspense } from 'react';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { addToCartUtil } from '@/lib/cartUtils';
+import {
+  getProductCategoryLabels,
+  productBelongsToProductType,
+  productHasDiseaseTags,
+  resolveProductTypeFromNavCategory,
+} from '@/lib/productCategoryMatch';
 
 interface Product {
   _id: number;
@@ -22,6 +28,9 @@ interface Product {
   subcategory?: string;
   diseaseCategory?: string;
   diseaseSubcategory?: string;
+  diseasePaths?: string[][];
+  extraCategoryPaths?: string[][];
+  categories?: string[];
   price: number;
   displayPrice?: number;
   mrp?: number;
@@ -194,17 +203,7 @@ function getSubcategoryFilterTargets(tabKey: string, subcategoryName: string): s
 }
 
 function getProductClassificationFields(p: Product): string[] {
-  const extraPaths = Array.isArray((p as Product & { extraCategoryPaths?: string[][] }).extraCategoryPaths)
-    ? (p as Product & { extraCategoryPaths?: string[][] }).extraCategoryPaths!.flat()
-    : [];
-
-  return [
-    p.subcategory,
-    p.category,
-    p.diseaseCategory,
-    p.diseaseSubcategory,
-    ...extraPaths,
-  ].filter(Boolean) as string[];
+  return getProductCategoryLabels(p);
 }
 
 function productMatchesSubcategoryFilter(p: Product, tabKey: string, subcategoryName: string): boolean {
@@ -471,27 +470,26 @@ function MedicinesContent() {
   // ── Filter products for current tab + sidebar category ──────────────────
   const displayed = useMemo(() => {
     const tabFiltered = products.filter((p) => {
-      const normalizedCategory = normalizeCategory(p.category);
-      const productType = (p.productType || '').trim();
-      const normalizedType = productType.toLowerCase();
-      const isLabTestType = normalizedType === 'lab tests' || normalizedType === 'lab test';
-      
-      // Check product type for all categories
-      const isGenericMedicineType = productType === 'Generic Medicine' || normalizedType === 'generic medicine';
-      const isAyurvedaType = productType === 'Ayurveda Medicine' || normalizedCategory === 'Ayurveda' || AYUR_CATEGORIES.includes(normalizedCategory);
-      const isHomeopathyType = productType === 'Homeopathy' || normalizedCategory === 'Homeopathy' || HOMEO_CATEGORIES.includes(normalizedCategory);
-      const isNutritionType = productType === 'Nutrition' || normalizedType === 'nutrition';
-      const isPersonalCareType = productType === 'Personal Care' || normalizedType === 'personal care';
-      const isFitnessType = productType === 'Fitness' || normalizedType === 'fitness';
-      const isBabyCareType = productType === 'Baby Care' || normalizedType === 'baby care';
-      const isSexualWellnessType = productType === 'Sexual Wellness' || normalizedType === 'sexual wellness';
-      const isUnaniType = productType === 'Unani' || normalizedType === 'unani';
-      const isDiseaseTagged = Boolean(p.diseaseCategory || p.diseaseSubcategory || equalsIgnoreCase(p.category, 'disease'));
+      const isLabTestType =
+        productBelongsToProductType(p, 'Lab Tests') ||
+        equalsIgnoreCase(p.productType, 'lab test');
 
-      // Filter by active tab
+      const isGenericMedicineType = productBelongsToProductType(p, 'Generic Medicine');
+      const isAyurvedaType = productBelongsToProductType(p, 'Ayurveda Medicine');
+      const isHomeopathyType = productBelongsToProductType(p, 'Homeopathy');
+      const isNutritionType = productBelongsToProductType(p, 'Nutrition');
+      const isOrganicType = productBelongsToProductType(p, 'Organic Products');
+      const isPersonalCareType = productBelongsToProductType(p, 'Personal Care');
+      const isFitnessType = productBelongsToProductType(p, 'Fitness');
+      const isBabyCareType = productBelongsToProductType(p, 'Baby Care');
+      const isSexualWellnessType = productBelongsToProductType(p, 'Sexual Wellness');
+      const isUnaniType = productBelongsToProductType(p, 'Unani');
+      const isDiseaseTagged = productHasDiseaseTags(p);
+
+      // Include additional category paths, not only the primary productType
       if (activeTab === 'ayurveda') return isAyurvedaType;
       if (activeTab === 'homeopathy') return isHomeopathyType;
-      if (activeTab === 'nutrition') return isNutritionType;
+      if (activeTab === 'nutrition') return isNutritionType || isOrganicType;
       if (activeTab === 'personalcare') return isPersonalCareType;
       if (activeTab === 'fitness') return isFitnessType;
       if (activeTab === 'babycare') return isBabyCareType;
@@ -499,8 +497,20 @@ function MedicinesContent() {
       if (activeTab === 'unani') return isUnaniType;
       if (activeTab === 'disease') return isDiseaseTagged;
 
-      // Medicines tab - include generic medicines and other non-specialized products
-      return !isLabTestType && !isAyurvedaType && !isHomeopathyType && !isNutritionType && !isPersonalCareType && !isFitnessType && !isBabyCareType && !isSexualWellnessType && !isUnaniType;
+      // Medicines tab
+      return (
+        isGenericMedicineType ||
+        (!isLabTestType &&
+          !isAyurvedaType &&
+          !isHomeopathyType &&
+          !isNutritionType &&
+          !isOrganicType &&
+          !isPersonalCareType &&
+          !isFitnessType &&
+          !isBabyCareType &&
+          !isSexualWellnessType &&
+          !isUnaniType)
+      );
     });
 
     const trimmedSearch = deferredSearch.trim();
@@ -511,13 +521,12 @@ function MedicinesContent() {
     return tabFiltered.filter((p) => {
       // If viewing organic products, only show products with organic subcategories
       if (isOrgProductsView) {
-        const isOrgType = equalsIgnoreCase(p.productType, 'Organic Products');
-        const isOrgCategory = equalsIgnoreCase(p.category, 'Organic Products');
-        const isOrgSubcat = ORGANIC_PRODUCTS_SUBCATS.some(
-          (subcat) =>
-            equalsIgnoreCase(p.subcategory, subcat) || equalsIgnoreCase(p.category, subcat)
+        const labels = getProductCategoryLabels(p);
+        const isOrgType = productBelongsToProductType(p, 'Organic Products');
+        const isOrgSubcat = ORGANIC_PRODUCTS_SUBCATS.some((subcat) =>
+          labels.some((label) => equalsIgnoreCase(label, subcat))
         );
-        if (!isOrgType && !isOrgCategory && !isOrgSubcat) return false;
+        if (!isOrgType && !isOrgSubcat) return false;
       }
 
       const matchCat =
@@ -525,34 +534,26 @@ function MedicinesContent() {
         productMatchesSubcategoryFilter(p, activeTab, sidebarCat);
 
     const urlCategoryMatch = !urlCategory || (() => {
-      const categoryFields = [
-        p.category,
-        p.subcategory,
-        p.diseaseCategory,
-        p.diseaseSubcategory,
-        p.benefit,
-        p.productType,
-        normalizeCategory(p.category),
-      ];
-
-      // Special handling for Disease category
       if (equalsIgnoreCase(urlCategory, 'disease')) {
-        return Boolean(p.diseaseCategory || p.diseaseSubcategory || equalsIgnoreCase(p.category, 'disease'));
+        return productHasDiseaseTags(p);
       }
 
-      // Check if URL category maps to a product type
-      const mappedProductType = CATEGORY_TO_PRODUCT_TYPE[urlCategory.toLowerCase().trim()];
+      const mappedProductType =
+        CATEGORY_TO_PRODUCT_TYPE[urlCategory.toLowerCase().trim()] ||
+        resolveProductTypeFromNavCategory(urlCategory);
       if (mappedProductType) {
-        return equalsIgnoreCase(p.productType, mappedProductType);
+        return productBelongsToProductType(p, mappedProductType);
       }
 
       if (equalsIgnoreCase(urlCategory, 'ayurveda')) {
-        return categoryFields.some((field) => equalsIgnoreCase(field, 'Ayurveda')) || equalsIgnoreCase(p.productType, 'Ayurveda Medicine');
+        return productBelongsToProductType(p, 'Ayurveda Medicine');
       }
 
       if (equalsIgnoreCase(urlCategory, 'homeopathy')) {
-        return categoryFields.some((field) => equalsIgnoreCase(field, 'Homeopathy')) || equalsIgnoreCase(p.productType, 'Homeopathy');
+        return productBelongsToProductType(p, 'Homeopathy');
       }
+
+      const categoryFields = getProductCategoryLabels(p);
 
       const normalizedCategoryKey = normalizeFilterToken(urlCategory);
       const categoryCandidates = [

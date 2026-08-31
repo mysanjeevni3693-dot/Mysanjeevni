@@ -328,6 +328,8 @@ export type CheckoutTokenInput = z.infer<typeof checkoutTokenSchema>;
 export interface CheckoutTokenResult {
   token: string;
   redirectUrl: string;
+  /** Flat delivery amount injected into the Fast Checkout cart (INR). */
+  shippingCharges?: number;
 }
 
 /** Address block used in SRC order payloads. */

@@ -77,6 +77,7 @@ const productSchema = new mongoose.Schema(
         'Homeopathy',
         'Lab Tests',
         'Nutrition',
+        'Organic Products',
         'Personal Care',
         'Fitness',
         'Sexual Wellness',

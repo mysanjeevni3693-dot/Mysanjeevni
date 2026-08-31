@@ -1,0 +1,226 @@
+Method	Endpoint	Full URL	Area	Notes
+GET	/api/addresses	https://mysanjeevni.com/api/addresses	addresses	Addresses
+POST	/api/addresses	https://mysanjeevni.com/api/addresses	addresses	Addresses
+PUT	/api/addresses/[id]	https://mysanjeevni.com/api/addresses/[id]	addresses	Addresses
+DELETE	/api/addresses/[id]	https://mysanjeevni.com/api/addresses/[id]	addresses	Addresses
+GET	/api/admin/analytics	https://mysanjeevni.com/api/admin/analytics	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/bank-details	https://mysanjeevni.com/api/admin/bank-details	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/bank-details	https://mysanjeevni.com/api/admin/bank-details	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/consultations	https://mysanjeevni.com/api/admin/consultations	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/consultations/[id]	https://mysanjeevni.com/api/admin/consultations/[id]	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/consultations/[id]	https://mysanjeevni.com/api/admin/consultations/[id]	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/doctors/pending-user/[id]	https://mysanjeevni.com/api/admin/doctors/pending-user/[id]	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/doctors	https://mysanjeevni.com/api/admin/doctors	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/doctors	https://mysanjeevni.com/api/admin/doctors	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/doctors/[id]	https://mysanjeevni.com/api/admin/doctors/[id]	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/doctors/[id]	https://mysanjeevni.com/api/admin/doctors/[id]	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/doctors/[id]	https://mysanjeevni.com/api/admin/doctors/[id]	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/doctors/[id]/[action]	https://mysanjeevni.com/api/admin/doctors/[id]/[action]	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/inquiries	https://mysanjeevni.com/api/admin/inquiries	admin	Admin panel (do not use in customer Android app)
+PATCH	/api/admin/inquiries/[id]	https://mysanjeevni.com/api/admin/inquiries/[id]	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/lab-tests/popular-partners	https://mysanjeevni.com/api/admin/lab-tests/popular-partners	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/lab-tests/popular-partners	https://mysanjeevni.com/api/admin/lab-tests/popular-partners	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/lab-tests	https://mysanjeevni.com/api/admin/lab-tests	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/lab-tests/[id]	https://mysanjeevni.com/api/admin/lab-tests/[id]	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/lab-tests/[id]	https://mysanjeevni.com/api/admin/lab-tests/[id]	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/lab-tests/[id]	https://mysanjeevni.com/api/admin/lab-tests/[id]	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/login	https://mysanjeevni.com/api/admin/login	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/products/bulk	https://mysanjeevni.com/api/admin/products/bulk	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/products	https://mysanjeevni.com/api/admin/products	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/products	https://mysanjeevni.com/api/admin/products	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/products	https://mysanjeevni.com/api/admin/products	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/products	https://mysanjeevni.com/api/admin/products	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/products/[id]	https://mysanjeevni.com/api/admin/products/[id]	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/products/[id]	https://mysanjeevni.com/api/admin/products/[id]	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/products/[id]	https://mysanjeevni.com/api/admin/products/[id]	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/reports/vendors	https://mysanjeevni.com/api/admin/reports/vendors	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/settlements	https://mysanjeevni.com/api/admin/settlements	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/settlements	https://mysanjeevni.com/api/admin/settlements	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/stats	https://mysanjeevni.com/api/admin/stats	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/support/chat	https://mysanjeevni.com/api/admin/support/chat	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/support/chat	https://mysanjeevni.com/api/admin/support/chat	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/support/returns	https://mysanjeevni.com/api/admin/support/returns	admin	Admin panel (do not use in customer Android app)
+PATCH	/api/admin/support/returns/[id]	https://mysanjeevni.com/api/admin/support/returns/[id]	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/users	https://mysanjeevni.com/api/admin/users	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/users	https://mysanjeevni.com/api/admin/users	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/users	https://mysanjeevni.com/api/admin/users	admin	Admin panel (do not use in customer Android app)
+DELETE	/api/admin/users	https://mysanjeevni.com/api/admin/users	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/vendors	https://mysanjeevni.com/api/admin/vendors	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/vendors	https://mysanjeevni.com/api/admin/vendors	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/vendors	https://mysanjeevni.com/api/admin/vendors	admin	Admin panel (do not use in customer Android app)
+POST	/api/admin/verify-token	https://mysanjeevni.com/api/admin/verify-token	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/wallet-management/commission	https://mysanjeevni.com/api/admin/wallet-management/commission	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/wallet-management/commission	https://mysanjeevni.com/api/admin/wallet-management/commission	admin	Admin panel (do not use in customer Android app)
+GET	/api/admin/wallet-management/withdrawals	https://mysanjeevni.com/api/admin/wallet-management/withdrawals	admin	Admin panel (do not use in customer Android app)
+PUT	/api/admin/wallet-management/withdrawals	https://mysanjeevni.com/api/admin/wallet-management/withdrawals	admin	Admin panel (do not use in customer Android app)
+POST	/api/agora/token	https://mysanjeevni.com/api/agora/token	agora	Video call token
+GET	/api/articles	https://mysanjeevni.com/api/articles	articles	articles
+POST	/api/articles	https://mysanjeevni.com/api/articles	articles	articles
+POST	/api/auth/forgot-password/reset	https://mysanjeevni.com/api/auth/forgot-password/reset	auth	Authentication
+POST	/api/auth/forgot-password/reset-email	https://mysanjeevni.com/api/auth/forgot-password/reset-email	auth	Authentication
+POST	/api/auth/forgot-password/send-otp	https://mysanjeevni.com/api/auth/forgot-password/send-otp	auth	Authentication
+POST	/api/auth/forgot-password/send-otp-email	https://mysanjeevni.com/api/auth/forgot-password/send-otp-email	auth	Authentication
+POST	/api/auth/google	https://mysanjeevni.com/api/auth/google	auth	Authentication
+POST	/api/auth/login	https://mysanjeevni.com/api/auth/login	auth	Authentication
+POST	/api/auth/phone/register-confirm	https://mysanjeevni.com/api/auth/phone/register-confirm	auth	Authentication
+POST	/api/auth/phone/send-otp	https://mysanjeevni.com/api/auth/phone/send-otp	auth	Authentication
+POST	/api/auth/phone/signup	https://mysanjeevni.com/api/auth/phone/signup	auth	Authentication
+POST	/api/auth/phone/verify-otp	https://mysanjeevni.com/api/auth/phone/verify-otp	auth	Authentication
+POST	/api/auth/phone/verify-signup-otp	https://mysanjeevni.com/api/auth/phone/verify-signup-otp	auth	Authentication
+POST	/api/auth/register	https://mysanjeevni.com/api/auth/register	auth	Authentication
+POST	/api/auth/signup	https://mysanjeevni.com/api/auth/signup	auth	Authentication
+GET	/api/bank-details	https://mysanjeevni.com/api/bank-details	bank-details	bank-details
+POST	/api/bank-details	https://mysanjeevni.com/api/bank-details	bank-details	bank-details
+PUT	/api/bank-details	https://mysanjeevni.com/api/bank-details	bank-details	bank-details
+GET	/api/cart	https://mysanjeevni.com/api/cart	cart	Cart
+POST	/api/cart	https://mysanjeevni.com/api/cart	cart	Cart
+DELETE	/api/cart	https://mysanjeevni.com/api/cart	cart	Cart
+GET	/api/categories	https://mysanjeevni.com/api/categories	categories	Categories
+POST	/api/categories	https://mysanjeevni.com/api/categories	categories	Categories
+PUT	/api/categories/[id]	https://mysanjeevni.com/api/categories/[id]	categories	Categories
+DELETE	/api/categories/[id]	https://mysanjeevni.com/api/categories/[id]	categories	Categories
+GET	/api/consultations	https://mysanjeevni.com/api/consultations	consultations	Consultations
+POST	/api/consultations	https://mysanjeevni.com/api/consultations	consultations	Consultations
+PUT	/api/consultations/[id]	https://mysanjeevni.com/api/consultations/[id]	consultations	Consultations
+GET	/api/currency	https://mysanjeevni.com/api/currency	currency	Currency
+POST	/api/currency	https://mysanjeevni.com/api/currency	currency	Currency
+POST	/api/delivery/webhook	https://mysanjeevni.com/api/delivery/webhook	delivery	delivery
+GET	/api/doctor/check-approval	https://mysanjeevni.com/api/doctor/check-approval	doctor	Doctor APIs
+GET	/api/doctor/consultations	https://mysanjeevni.com/api/doctor/consultations	doctor	Doctor APIs
+PUT	/api/doctor/consultations/[id]	https://mysanjeevni.com/api/doctor/consultations/[id]	doctor	Doctor APIs
+GET	/api/doctor/consultations-list	https://mysanjeevni.com/api/doctor/consultations-list	doctor	Doctor APIs
+GET	/api/doctor/prescriptions	https://mysanjeevni.com/api/doctor/prescriptions	doctor	Doctor APIs
+GET	/api/doctor/profile	https://mysanjeevni.com/api/doctor/profile	doctor	Doctor APIs
+PUT	/api/doctor/profile	https://mysanjeevni.com/api/doctor/profile	doctor	Doctor APIs
+POST	/api/doctor/profile-setup	https://mysanjeevni.com/api/doctor/profile-setup	doctor	Doctor APIs
+POST	/api/doctor/upload-document	https://mysanjeevni.com/api/doctor/upload-document	doctor	Doctor APIs
+POST	/api/doctor/upload-image	https://mysanjeevni.com/api/doctor/upload-image	doctor	Doctor APIs
+GET	/api/doctor-consultation/book/with-sms	https://mysanjeevni.com/api/doctor-consultation/book/with-sms	doctor-consultation	Doctor booking
+POST	/api/doctor-consultation/book/with-sms	https://mysanjeevni.com/api/doctor-consultation/book/with-sms	doctor-consultation	Doctor booking
+PUT	/api/doctor-consultation/book/with-sms	https://mysanjeevni.com/api/doctor-consultation/book/with-sms	doctor-consultation	Doctor booking
+PATCH	/api/doctor-consultation/book/with-sms	https://mysanjeevni.com/api/doctor-consultation/book/with-sms	doctor-consultation	Doctor booking
+DELETE	/api/doctor-consultation/book/with-sms	https://mysanjeevni.com/api/doctor-consultation/book/with-sms	doctor-consultation	Doctor booking
+GET	/api/doctor-consultation	https://mysanjeevni.com/api/doctor-consultation	doctor-consultation	Doctor booking
+POST	/api/doctor-consultation	https://mysanjeevni.com/api/doctor-consultation	doctor-consultation	Doctor booking
+GET	/api/doctors	https://mysanjeevni.com/api/doctors	doctors	Public doctor list
+GET	/api/documents/proxy	https://mysanjeevni.com/api/documents/proxy	documents	documents
+GET	/api/documents/serve	https://mysanjeevni.com/api/documents/serve	documents	documents
+GET	/api/featured-products	https://mysanjeevni.com/api/featured-products	featured-products	featured-products
+POST	/api/featured-products	https://mysanjeevni.com/api/featured-products	featured-products	featured-products
+GET	/api/featured-products/[id]	https://mysanjeevni.com/api/featured-products/[id]	featured-products	featured-products
+PUT	/api/featured-products/[id]	https://mysanjeevni.com/api/featured-products/[id]	featured-products	featured-products
+DELETE	/api/featured-products/[id]	https://mysanjeevni.com/api/featured-products/[id]	featured-products	featured-products
+GET	/api/health/resend	https://mysanjeevni.com/api/health/resend	health	Health check
+GET	/api/health	https://mysanjeevni.com/api/health	health	Health check
+GET	/api/health-concerns	https://mysanjeevni.com/api/health-concerns	health-concerns	health-concerns
+POST	/api/health-concerns	https://mysanjeevni.com/api/health-concerns	health-concerns	health-concerns
+POST	/api/inquiries	https://mysanjeevni.com/api/inquiries	inquiries	inquiries
+GET	/api/lab-partners/serviceability	https://mysanjeevni.com/api/lab-partners/serviceability	lab-partners	Lab partners
+POST	/api/lab-partners/slots	https://mysanjeevni.com/api/lab-partners/slots	lab-partners	Lab partners
+GET	/api/lab-test-bookings/history	https://mysanjeevni.com/api/lab-test-bookings/history	lab-test-bookings	Lab bookings
+PATCH	/api/lab-test-bookings/history	https://mysanjeevni.com/api/lab-test-bookings/history	lab-test-bookings	Lab bookings
+GET	/api/lab-test-bookings	https://mysanjeevni.com/api/lab-test-bookings	lab-test-bookings	Lab bookings
+POST	/api/lab-test-bookings	https://mysanjeevni.com/api/lab-test-bookings	lab-test-bookings	Lab bookings
+POST	/api/lab-test-bookings/sync	https://mysanjeevni.com/api/lab-test-bookings/sync	lab-test-bookings	Lab bookings
+POST	/api/lab-test-bookings/[id]/cancel	https://mysanjeevni.com/api/lab-test-bookings/[id]/cancel	lab-test-bookings	Lab bookings
+POST	/api/lab-test-bookings/[id]/sync	https://mysanjeevni.com/api/lab-test-bookings/[id]/sync	lab-test-bookings	Lab bookings
+GET	/api/lab-tests/book/with-sms	https://mysanjeevni.com/api/lab-tests/book/with-sms	lab-tests	Lab tests
+POST	/api/lab-tests/book/with-sms	https://mysanjeevni.com/api/lab-tests/book/with-sms	lab-tests	Lab tests
+DELETE	/api/lab-tests/book/with-sms	https://mysanjeevni.com/api/lab-tests/book/with-sms	lab-tests	Lab tests
+GET	/api/lab-tests/popular	https://mysanjeevni.com/api/lab-tests/popular	lab-tests	Lab tests
+GET	/api/lab-tests	https://mysanjeevni.com/api/lab-tests	lab-tests	Lab tests
+POST	/api/lab-tests	https://mysanjeevni.com/api/lab-tests	lab-tests	Lab tests
+POST	/api/lab-tests/seed	https://mysanjeevni.com/api/lab-tests/seed	lab-tests	Lab tests
+GET	/api/lab-tests/[id]	https://mysanjeevni.com/api/lab-tests/[id]	lab-tests	Lab tests
+POST	/api/medicines/delete-image	https://mysanjeevni.com/api/medicines/delete-image	medicines	medicines
+POST	/api/medicines/upload-image	https://mysanjeevni.com/api/medicines/upload-image	medicines	medicines
+GET	/api/notifications	https://mysanjeevni.com/api/notifications	notifications	Notifications
+POST	/api/notifications	https://mysanjeevni.com/api/notifications	notifications	Notifications
+PATCH	/api/notifications	https://mysanjeevni.com/api/notifications	notifications	Notifications
+GET	/api/offers	https://mysanjeevni.com/api/offers	offers	offers
+POST	/api/offers	https://mysanjeevni.com/api/offers	offers	offers
+PUT	/api/offers	https://mysanjeevni.com/api/offers	offers	offers
+POST	/api/orders/place	https://mysanjeevni.com/api/orders/place	orders	Orders
+GET	/api/orders	https://mysanjeevni.com/api/orders	orders	Orders
+POST	/api/orders	https://mysanjeevni.com/api/orders	orders	Orders
+PUT	/api/orders	https://mysanjeevni.com/api/orders	orders	Orders
+GET	/api/orders/track	https://mysanjeevni.com/api/orders/track	orders	Orders
+POST	/api/orders/with-sms	https://mysanjeevni.com/api/orders/with-sms	orders	Orders
+PUT	/api/orders/with-sms	https://mysanjeevni.com/api/orders/with-sms	orders	Orders
+POST	/api/payments/paypal/capture-order	https://mysanjeevni.com/api/payments/paypal/capture-order	payments	Payments
+GET	/api/payments/paypal/config	https://mysanjeevni.com/api/payments/paypal/config	payments	Payments
+POST	/api/payments/paypal/create-order	https://mysanjeevni.com/api/payments/paypal/create-order	payments	Payments
+POST	/api/payments/paypal/webhook	https://mysanjeevni.com/api/payments/paypal/webhook	payments	Payments
+POST	/api/payments/razorpay/create-order	https://mysanjeevni.com/api/payments/razorpay/create-order	payments	Payments
+GET	/api/payments/razorpay/order	https://mysanjeevni.com/api/payments/razorpay/order	payments	Payments
+POST	/api/payments/razorpay/order	https://mysanjeevni.com/api/payments/razorpay/order	payments	Payments
+POST	/api/payments/razorpay/refund	https://mysanjeevni.com/api/payments/razorpay/refund	payments	Payments
+POST	/api/payments/razorpay/verify-order	https://mysanjeevni.com/api/payments/razorpay/verify-order	payments	Payments
+POST	/api/payments/razorpay/verify-order-payment	https://mysanjeevni.com/api/payments/razorpay/verify-order-payment	payments	Payments
+POST	/api/payments/razorpay/webhook	https://mysanjeevni.com/api/payments/razorpay/webhook	payments	Payments
+POST	/api/prescriptions/notify	https://mysanjeevni.com/api/prescriptions/notify	prescriptions	Prescriptions
+GET	/api/prescriptions	https://mysanjeevni.com/api/prescriptions	prescriptions	Prescriptions
+POST	/api/prescriptions	https://mysanjeevni.com/api/prescriptions	prescriptions	Prescriptions
+POST	/api/prescriptions/upload	https://mysanjeevni.com/api/prescriptions/upload	prescriptions	Prescriptions
+GET	/api/products/popular	https://mysanjeevni.com/api/products/popular	products	Catalog
+GET	/api/products	https://mysanjeevni.com/api/products	products	Catalog
+POST	/api/products	https://mysanjeevni.com/api/products	products	Catalog
+POST	/api/products/seed	https://mysanjeevni.com/api/products/seed	products	Catalog
+GET	/api/products/[id]	https://mysanjeevni.com/api/products/[id]	products	Catalog
+GET	/api/questions	https://mysanjeevni.com/api/questions	questions	questions
+POST	/api/questions	https://mysanjeevni.com/api/questions	questions	questions
+GET	/api/reviews	https://mysanjeevni.com/api/reviews	reviews	Reviews
+POST	/api/reviews	https://mysanjeevni.com/api/reviews	reviews	Reviews
+PATCH	/api/reviews/[id]	https://mysanjeevni.com/api/reviews/[id]	reviews	Reviews
+DELETE	/api/reviews/[id]	https://mysanjeevni.com/api/reviews/[id]	reviews	Reviews
+GET	/api/seed	https://mysanjeevni.com/api/seed	seed	Dev/seed only
+POST	/api/seed	https://mysanjeevni.com/api/seed	seed	Dev/seed only
+POST	/api/shiprocket/assign-awb	https://mysanjeevni.com/api/shiprocket/assign-awb	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/auto-fulfill	https://mysanjeevni.com/api/shiprocket/auto-fulfill	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/cancel	https://mysanjeevni.com/api/shiprocket/cancel	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/checkout/order	https://mysanjeevni.com/api/shiprocket/checkout/order	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/checkout/token	https://mysanjeevni.com/api/shiprocket/checkout/token	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/checkout/webhook	https://mysanjeevni.com/api/shiprocket/checkout/webhook	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/create-order	https://mysanjeevni.com/api/shiprocket/create-order	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/generate-invoice	https://mysanjeevni.com/api/shiprocket/generate-invoice	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/generate-label	https://mysanjeevni.com/api/shiprocket/generate-label	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/generate-manifest	https://mysanjeevni.com/api/shiprocket/generate-manifest	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/generate-pickup	https://mysanjeevni.com/api/shiprocket/generate-pickup	shiprocket	Shipping (mostly server/admin)
+POST	/api/shiprocket/serviceability	https://mysanjeevni.com/api/shiprocket/serviceability	shiprocket	Shipping (mostly server/admin)
+GET	/api/shiprocket/track	https://mysanjeevni.com/api/shiprocket/track	shiprocket	Shipping (mostly server/admin)
+POST	/api/upload	https://mysanjeevni.com/api/upload	upload	File upload
+PUT	/api/user/change-password	https://mysanjeevni.com/api/user/change-password	user	User profile/support
+GET	/api/user/profile	https://mysanjeevni.com/api/user/profile	user	User profile/support
+GET	/api/user/support/chat	https://mysanjeevni.com/api/user/support/chat	user	User profile/support
+POST	/api/user/support/chat	https://mysanjeevni.com/api/user/support/chat	user	User profile/support
+GET	/api/user/support/returns	https://mysanjeevni.com/api/user/support/returns	user	User profile/support
+POST	/api/user/support/returns	https://mysanjeevni.com/api/user/support/returns	user	User profile/support
+GET	/api/user/support/tickets	https://mysanjeevni.com/api/user/support/tickets	user	User profile/support
+PUT	/api/user/update-profile	https://mysanjeevni.com/api/user/update-profile	user	User profile/support
+POST	/api/user/upload-profile-image	https://mysanjeevni.com/api/user/upload-profile-image	user	User profile/support
+GET	/api/vendor/dashboard/stats	https://mysanjeevni.com/api/vendor/dashboard/stats	vendor	Vendor panel
+POST	/api/vendor/login	https://mysanjeevni.com/api/vendor/login	vendor	Vendor panel
+GET	/api/vendor/notifications	https://mysanjeevni.com/api/vendor/notifications	vendor	Vendor panel
+PUT	/api/vendor/notifications	https://mysanjeevni.com/api/vendor/notifications	vendor	Vendor panel
+POST	/api/vendor/products/bulk-upload	https://mysanjeevni.com/api/vendor/products/bulk-upload	vendor	Vendor panel
+GET	/api/vendor/products	https://mysanjeevni.com/api/vendor/products	vendor	Vendor panel
+POST	/api/vendor/products	https://mysanjeevni.com/api/vendor/products	vendor	Vendor panel
+PUT	/api/vendor/products	https://mysanjeevni.com/api/vendor/products	vendor	Vendor panel
+DELETE	/api/vendor/products	https://mysanjeevni.com/api/vendor/products	vendor	Vendor panel
+GET	/api/vendor/profile	https://mysanjeevni.com/api/vendor/profile	vendor	Vendor panel
+PUT	/api/vendor/profile	https://mysanjeevni.com/api/vendor/profile	vendor	Vendor panel
+POST	/api/vendor/register	https://mysanjeevni.com/api/vendor/register	vendor	Vendor panel
+GET	/api/vendor/reports	https://mysanjeevni.com/api/vendor/reports	vendor	Vendor panel
+GET	/api/vendor/returns	https://mysanjeevni.com/api/vendor/returns	vendor	Vendor panel
+PUT	/api/vendor/returns	https://mysanjeevni.com/api/vendor/returns	vendor	Vendor panel
+GET	/api/vendor/settlements	https://mysanjeevni.com/api/vendor/settlements	vendor	Vendor panel
+POST	/api/vendor/upload-profile-image	https://mysanjeevni.com/api/vendor/upload-profile-image	vendor	Vendor panel
+GET	/api/wallet/balance	https://mysanjeevni.com/api/wallet/balance	wallet	Vendor wallet
+GET	/api/wallet/earnings	https://mysanjeevni.com/api/wallet/earnings	wallet	Vendor wallet
+GET	/api/wallet/transactions	https://mysanjeevni.com/api/wallet/transactions	wallet	Vendor wallet
+GET	/api/wellness-pillars	https://mysanjeevni.com/api/wellness-pillars	wellness-pillars	wellness-pillars
+GET	/api/wishlist	https://mysanjeevni.com/api/wishlist	wishlist	Wishlist
+POST	/api/wishlist	https://mysanjeevni.com/api/wishlist	wishlist	Wishlist
+DELETE	/api/wishlist	https://mysanjeevni.com/api/wishlist	wishlist	Wishlist
+GET	/api/withdrawal/request	https://mysanjeevni.com/api/withdrawal/request	withdrawal	withdrawal
+POST	/api/withdrawal/request	https://mysanjeevni.com/api/withdrawal/request	withdrawal	withdrawal

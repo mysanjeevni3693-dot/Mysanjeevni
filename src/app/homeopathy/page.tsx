@@ -7,6 +7,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { addToCartUtil } from '@/lib/cartUtils';
+import { productBelongsToProductType } from '@/lib/productCategoryMatch';
 
 interface HomeopathyProduct {
   _id: number;
@@ -214,7 +215,7 @@ function HomeopathyContent() {
       setError('');
 
       try {
-        const response = await fetch('/api/products?productType=Homeopathy&limit=250', {
+        const response = await fetch('/api/products?productType=Homeopathy&limit=1000', {
           cache: 'no-store',
         });
         const data = await response.json();
@@ -223,10 +224,20 @@ function HomeopathyContent() {
           throw new Error(data.error || 'Failed to load homeopathy products');
         }
 
-        setProducts(data.products || []);
+        const list = Array.isArray(data.products) ? data.products : [];
+        setProducts(
+          list.filter((product: HomeopathyProduct) =>
+            productBelongsToProductType(product, 'Homeopathy')
+          )
+        );
       } catch (err: any) {
         setProducts([]);
-        setError(err.message || 'Unable to load products right now.');
+        const message = String(err?.message || '');
+        setError(
+          /mongodb|connect|ECONNREFUSED|Internal server/i.test(message)
+            ? 'Unable to reach the database right now. Please restart the dev server and try again.'
+            : message || 'Unable to load products right now.'
+        );
       } finally {
         setLoading(false);
       }

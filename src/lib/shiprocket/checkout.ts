@@ -198,7 +198,7 @@ export async function createCheckoutToken(
     );
   }
 
-  return { token, redirectUrl };
+  return { token, redirectUrl, shippingCharges };
 }
 
 /**

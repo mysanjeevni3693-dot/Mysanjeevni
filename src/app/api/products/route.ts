@@ -84,24 +84,49 @@ export async function GET(request: NextRequest) {
     const page = parseInt(request.nextUrl.searchParams.get('page') || '1');
     const limit = parseInt(request.nextUrl.searchParams.get('limit') || '20');
 
+    // Keep approval/status filters separate from category filters.
+    // Mixing them in one $or made "productType=X" match every approved product.
     const query: any = {
       isActive: true,
-      $or: [{ approvalStatus: 'approved' }, { approvalStatus: { $exists: false } }],
+      $and: [
+        {
+          $or: [{ approvalStatus: 'approved' }, { approvalStatus: { $exists: false } }],
+        },
+      ],
     };
 
-    // Add category filtering
     if (category) {
-      query.$or.push({ category: category });
-      query.$or.push({ categories: { $in: [category] } });
+      query.$and.push({
+        $or: [
+          { category },
+          { subcategory: category },
+          { categories: category },
+          // Any segment in any additional category path
+          { extraCategoryPaths: { $elemMatch: { $elemMatch: { $eq: category } } } },
+        ],
+      });
     }
-    if (subcategory) query.subcategory = subcategory;
+    if (subcategory) {
+      query.$and.push({
+        $or: [
+          { subcategory },
+          { categories: subcategory },
+          { extraCategoryPaths: { $elemMatch: { $elemMatch: { $eq: subcategory } } } },
+        ],
+      });
+    }
     if (brand) query.brand = { $regex: brand, $options: 'i' };
     if (productType) {
-      // Match products by main productType OR by extraCategoryPaths first element
-      query.$or = query.$or || [];
-      query.$or.push({ productType: productType });
-      // Check if extraCategoryPaths contains the requested product type as first element
-      query.$or.push({ 'extraCategoryPaths.0': productType });
+      // Main type OR an additional category path starting with / containing that type
+      query.$and.push({
+        $or: [
+          { productType },
+          { 'extraCategoryPaths.0': productType },
+          { extraCategoryPaths: { $elemMatch: { 0: productType } } },
+          { extraCategoryPaths: { $elemMatch: { $elemMatch: { $eq: productType } } } },
+          { categories: productType },
+        ],
+      });
     }
     if (potency) query.potency = potency;
     if (quantityUnit) query.quantityUnit = quantityUnit;
@@ -109,8 +134,23 @@ export async function GET(request: NextRequest) {
       const parsedQuantity = Number(quantity);
       if (!Number.isNaN(parsedQuantity)) query.quantity = parsedQuantity;
     }
-    if (diseaseCategory) query.diseaseCategory = diseaseCategory;
-    if (diseaseSubcategory) query.diseaseSubcategory = diseaseSubcategory;
+    if (diseaseCategory) {
+      query.$and.push({
+        $or: [
+          { diseaseCategory },
+          { 'diseasePaths.0': diseaseCategory },
+          { diseasePaths: { $elemMatch: { 0: diseaseCategory } } },
+        ],
+      });
+    }
+    if (diseaseSubcategory) {
+      query.$and.push({
+        $or: [
+          { diseaseSubcategory },
+          { diseasePaths: { $elemMatch: { $elemMatch: { $eq: diseaseSubcategory } } } },
+        ],
+      });
+    }
     if (name) query.name = name;
     if (search) {
       const parsedSearchQuantity = Number(search);
@@ -124,13 +164,12 @@ export async function GET(request: NextRequest) {
         { quantityUnit: { $regex: search, $options: 'i' } },
         { diseaseCategory: { $regex: search, $options: 'i' } },
         { diseaseSubcategory: { $regex: search, $options: 'i' } },
+        { productType: { $regex: search, $options: 'i' } },
       ];
       if (!Number.isNaN(parsedSearchQuantity)) {
         searchOr.push({ quantity: parsedSearchQuantity });
       }
-      query.$or = [
-        ...searchOr,
-      ];
+      query.$and.push({ $or: searchOr });
     }
     if (healthConcern) {
       query.healthConcerns = { $in: [healthConcern] };
@@ -348,6 +387,7 @@ export async function POST(request: NextRequest) {
       diseaseSubcategory: diseaseSubcategory || undefined,
       subcategory: subcategory || undefined,
       shortDescription: typeof shortDescription === 'string' ? shortDescription.trim() : undefined,
+      approvalStatus: 'approved',
     });
 
     return NextResponse.json(
