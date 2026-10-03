@@ -8,6 +8,8 @@ import Footer from '@/components/Footer';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { addToCartUtil } from '@/lib/cartUtils';
 import { productBelongsToProductType } from '@/lib/productCategoryMatch';
+import { fetchAllCatalogProducts } from '@/lib/fetchCatalogProducts';
+import { buildStorefrontCategories } from '@/lib/storefrontCategories';
 
 interface HomeopathyProduct {
   _id: number;
@@ -38,46 +40,12 @@ interface HomeopathyProduct {
   currency?: 'INR' | 'USD';
 }
 
-const DEFAULT_CATEGORIES = [
-  'SBL', 'Dr. Reckeweg', 'Willmar Schwabe', 'Adel Pekana', 'Schwabe India', 'Bjain', 'R S Bhargava', 'Baksons', 'REPL', 'New Life',
-  '3X', '6X', '3 CH', '6 CH', '12 CH', '30 CH', '200 CH', '1000 CH', '10M CH', '50M CH', 'CM CH',
-  'Mother Tinctures', 'Biochemic', 'Triturations', 'Bio Combination', 'Bach Flower', 'Homeopathy Kits', 'Milleimal LM Potency',
-  'Hair Care', 'Skin Care', 'Oral Care',
-];
-
 const SORT_OPTIONS = [
   { value: 'featured', label: 'Featured' },
   { value: 'price-low', label: 'Price: Low to High' },
   { value: 'price-high', label: 'Price: High to Low' },
   { value: 'rating', label: 'Highest Rated' },
 ];
-
-const HOMEOPATHY_GROUPED_SUBCATEGORIES: Record<string, string[]> = {
-  Medicines: [
-    'SBL',
-    'Dr. Reckeweg (Germany)',
-    'Willmar Schwabe (Germany)',
-    'Adel Pekana (Germany)',
-    'Willmar Schwabe India',
-    'BJain',
-    'R S Bhargava',
-    'Baksons',
-    'REPL',
-    'New Life',
-    'Special Tablets',
-    'Cream & Ointment',
-    'Special Liquid/Drops',
-  ],
-  Cosmetics: ['Hair Care', 'Skin Care', 'Oral Care'],
-  Dilutions: ['3X', '6X', '3 CH', '6 CH', '12 CH', '30 CH', '200 CH', '1000 CH', '10M CH', '50M CH', 'CM CH'],
-  'Mother Tinctures': ['SBL', 'Dr. Reckeweg (Germany)', 'Willmar Schwabe India', 'BJain'],
-  Biochemic: ['SBL', 'Dr. Reckeweg (Germany)', 'BJain', 'Willmar Schwabe India'],
-  'Bach Flower': ['Bach Flower Remedies', 'Bach Flower Kits'],
-  'Homeopathy Kits': ['Homeopathy Kits'],
-  Triturations: ['SBL', 'Dr. Reckeweg (Germany)', 'Willmar Schwabe India', 'BJain'],
-  'Millesimal LM Potency': ['SBL', 'BJain'],
-  'Bio Combination': ['SBL', 'Dr. Reckeweg (Germany)', 'BJain', 'Willmar Schwabe India', 'Haslab (HSL)'],
-};
 
 function normalizeText(value?: string) {
   return (value || '').trim().toLowerCase();
@@ -87,10 +55,10 @@ function equalsIgnoreCase(left?: string, right?: string) {
   return normalizeText(left) === normalizeText(right);
 }
 
-function getHomeopathyFilterTargets(categoryName: string): string[] {
+function getHomeopathyFilterTargets(categoryName: string, groups: Record<string, string[]>): string[] {
   if (!categoryName || categoryName === 'All') return [];
 
-  for (const [groupName, items] of Object.entries(HOMEOPATHY_GROUPED_SUBCATEGORIES)) {
+  for (const [groupName, items] of Object.entries(groups)) {
     if (equalsIgnoreCase(groupName, categoryName)) {
       return [groupName, ...items];
     }
@@ -99,8 +67,12 @@ function getHomeopathyFilterTargets(categoryName: string): string[] {
   return [HOMEOPATHY_CATEGORY_ALIASES[categoryName.trim().toLowerCase()] || categoryName];
 }
 
-function homeopathyProductMatchesCategory(product: HomeopathyProduct, categoryName: string): boolean {
-  const targets = getHomeopathyFilterTargets(categoryName);
+function homeopathyProductMatchesCategory(
+  product: HomeopathyProduct,
+  categoryName: string,
+  groups: Record<string, string[]>
+): boolean {
+  const targets = getHomeopathyFilterTargets(categoryName, groups);
   if (targets.length === 0) return true;
 
   const fields = [
@@ -140,19 +112,10 @@ function HomeopathyContent() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
+  const [categoryGroups, setCategoryGroups] = useState<Record<string, string[]>>({});
+  const [categoryChips, setCategoryChips] = useState<string[]>([]);
 
-  const categories = useMemo(() => {
-    const dynamicCategories = Array.from(
-      new Set(
-        products
-          .map((product) => (product.category || '').trim())
-          .filter(Boolean)
-      )
-    );
-
-    const merged = Array.from(new Set([...DEFAULT_CATEGORIES, ...dynamicCategories]));
-    return ['All', ...merged];
-  }, [products]);
+  const categories = useMemo(() => ['All', ...categoryChips], [categoryChips]);
 
   useEffect(() => {
     const normalizedCategory = HOMEOPATHY_CATEGORY_ALIASES[urlCategory.trim().toLowerCase()] || urlCategory;
@@ -164,7 +127,7 @@ function HomeopathyContent() {
   const filteredProducts = useMemo(() => {
     let result = products.filter((product) => {
       const matchesCategory =
-        selectedCategory === 'All' || homeopathyProductMatchesCategory(product, selectedCategory);
+        selectedCategory === 'All' || homeopathyProductMatchesCategory(product, selectedCategory, categoryGroups);
 
       const searchText = search.trim().toLowerCase();
       const concatenatedHealthConcerns = Array.isArray(product.healthConcerns) ? product.healthConcerns.join(' ') : '';
@@ -193,7 +156,7 @@ function HomeopathyContent() {
     else if (sortOrder === 'rating') result.sort((a, b) => (b.rating || 0) - (a.rating || 0));
 
     return result;
-  }, [products, selectedCategory, search, sortOrder]);
+  }, [products, selectedCategory, search, sortOrder, categoryGroups]);
 
   useEffect(() => {
     if (loading) return;
@@ -215,21 +178,20 @@ function HomeopathyContent() {
       setError('');
 
       try {
-        const response = await fetch('/api/products?productType=Homeopathy&limit=1000', {
-          cache: 'no-store',
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Failed to load homeopathy products');
-        }
-
-        const list = Array.isArray(data.products) ? data.products : [];
-        setProducts(
-          list.filter((product: HomeopathyProduct) =>
-            productBelongsToProductType(product, 'Homeopathy')
-          )
+        const [list, categoryResponse] = await Promise.all([
+          fetchAllCatalogProducts({ productType: 'Homeopathy' }),
+          fetch('/api/categories', { cache: 'no-store' }),
+        ]);
+        const categoryData = await categoryResponse.json().catch(() => ({}));
+        const tree = Array.isArray(categoryData?.tree) ? categoryData.tree : [];
+        const homeopathyProducts = list.filter((product: HomeopathyProduct) =>
+          productBelongsToProductType(product, 'Homeopathy')
         );
+        const { chips, groups } = buildStorefrontCategories(tree, 'Homeopathy', homeopathyProducts);
+
+        setProducts(homeopathyProducts);
+        setCategoryChips(chips);
+        setCategoryGroups(groups);
       } catch (err: any) {
         setProducts([]);
         const message = String(err?.message || '');

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPaypalAccessToken, getPaypalBaseUrl, getPaypalConfig } from '@/lib/paypal';
+import { getPaypalAccessToken, getPaypalBaseUrl, getPaypalConfig, getPaypalMode } from '@/lib/paypal';
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
         status: response.status,
         currency: useCurrency,
         amount: normalizedAmount,
-        mode: process.env.PAYPAL_MODE || 'sandbox',
+        mode: getPaypalMode(),
         details: data,
       });
       return NextResponse.json(

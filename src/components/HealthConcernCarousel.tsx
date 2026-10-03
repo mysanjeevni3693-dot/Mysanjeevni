@@ -14,14 +14,14 @@ interface HealthConcernCarouselProps {
 }
 
 const DEFAULT_CONCERNS: HealthConcern[] = [
-  { icon: '🛡️', label: 'Immunity', href: '/medicines?concern=immunity' },
-  { icon: '🫕', label: 'Digestion', href: '/medicines?concern=digestion' },
-  { icon: '😴', label: 'Sleep & Stress', href: '/medicines?concern=sleep' },
-  { icon: '⚡', label: 'Energy & Vitality', href: '/medicines?concern=energy' },
-  { icon: '💆', label: 'Pain Relief', href: '/medicines?concern=pain' },
-  { icon: '👨‍⚕️', label: 'Heart Health', href: '/medicines?concern=heart' },
-  { icon: '🧠', label: 'Brain Health', href: '/medicines?concern=brain' },
-  { icon: '💪', label: 'Bone & Joint', href: '/medicines?concern=bone' },
+  { icon: '🛡️', label: 'Immunity', href: '/medicines?concern=immunity#products-section' },
+  { icon: '🫕', label: 'Digestion', href: '/medicines?concern=digestion#products-section' },
+  { icon: '😴', label: 'Sleep & Stress', href: '/medicines?concern=sleep#products-section' },
+  { icon: '⚡', label: 'Energy & Vitality', href: '/medicines?concern=energy#products-section' },
+  { icon: '💆', label: 'Pain Relief', href: '/medicines?concern=pain#products-section' },
+  { icon: '👨‍⚕️', label: 'Heart Health', href: '/medicines?concern=heart#products-section' },
+  { icon: '🧠', label: 'Brain Health', href: '/medicines?concern=brain#products-section' },
+  { icon: '💪', label: 'Bone & Joint', href: '/medicines?concern=bone#products-section' },
 ];
 
 export default function HealthConcernCarousel({ concerns = DEFAULT_CONCERNS }: HealthConcernCarouselProps) {

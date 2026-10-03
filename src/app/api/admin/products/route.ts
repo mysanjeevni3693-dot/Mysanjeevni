@@ -3,6 +3,9 @@ import { connectDB } from '@/lib/db';
 import { Product } from '@/lib/models/Product';
 import { generateProductId } from '@/lib/utils/productIdGenerator';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -11,7 +14,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const productType = searchParams.get('productType');
     const approvalStatus = searchParams.get('approvalStatus');
-    const limit = parseInt(searchParams.get('limit') || '200');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const requestedLimit = searchParams.get('limit');
+    const limit = requestedLimit ? Math.min(10000, Math.max(1, parseInt(requestedLimit) || 1000)) : 1000;
 
     await connectDB();
 
@@ -30,11 +35,13 @@ export async function GET(request: NextRequest) {
       ];
     }
 
+    const total = await Product.countDocuments(query);
     const products = await Product.find(query)
       .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
       .limit(limit);
 
-    return NextResponse.json({ products, total: products.length });
+    return NextResponse.json({ products, total, page, limit });
   } catch (error) {
     console.error('Error fetching products:', error);
     return NextResponse.json(

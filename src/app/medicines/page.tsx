@@ -9,6 +9,7 @@ import SocialToggle from '@/components/SocialToggle';
 import { Suspense } from 'react';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { addToCartUtil } from '@/lib/cartUtils';
+import { fetchAllCatalogProducts } from '@/lib/fetchCatalogProducts';
 import {
   getProductCategoryLabels,
   productBelongsToProductType,
@@ -291,6 +292,125 @@ function fieldMatchesAny(fields: Array<string | undefined>, query?: string) {
   return fields.some((field) => matchesFilterValue(field, query));
 }
 
+const HEALTH_CONCERN_KEYWORDS: Record<string, string[]> = {
+  immunity: [
+    'immunity', 'immune', 'infection', 'infections', 'fever', 'flu', 'cold', 'cough',
+    'chyawanprash', 'giloy', 'guduchi', 'vitamin c', 'zinc', 'arsenicum',
+    'fevers', 'fevers and flu', 'tonics', 'blood purifiers', 'respiratory', 'antibiotic', 'antiviral', 'allergy'
+  ],
+  digestion: [
+    'digestion', 'digestive', 'digestives', 'acidity', 'gas', 'indigestion', 'constipation',
+    'piles', 'stomach', 'gut', 'liver', 'triphala', 'pantoprazole', 'nux vomica',
+    'ibs', 'colitis', 'diarrhoea', 'diarrhea', 'rectum', 'jaundice', 'vomiting',
+    'nausea', 'appetite', 'gall stones', 'fistula', 'ulcer', 'gastric'
+  ],
+  sleep: [
+    'sleep', 'stress', 'insomnia', 'sleeplessness', 'anxiety', 'depression',
+    'calm', 'relax', 'mind', 'ashwagandha', 'mental', 'memory', 'rest',
+    'headache', 'migraine', 'nervous'
+  ],
+  stress: [
+    'sleep', 'stress', 'insomnia', 'sleeplessness', 'anxiety', 'depression',
+    'calm', 'relax', 'mind', 'ashwagandha', 'mental', 'vitality'
+  ],
+  energy: [
+    'energy', 'vitality', 'shilajit', 'weakness', 'fatigue', 'tonic', 'tonics',
+    'stamina', 'protein', 'nutrition', 'revitalize', 'general tonics', 'anaemia',
+    'sports nutrition', 'weight gainers', 'vitamins', 'b12', 'iron'
+  ],
+  vitality: [
+    'energy', 'vitality', 'shilajit', 'weakness', 'fatigue', 'tonic',
+    'stamina', 'protein', 'nutrition', 'revitalize', 'ashwagandha'
+  ],
+  pain: [
+    'pain', 'pain relief', 'ache', 'headache', 'migraine', 'back pain',
+    'knee pain', 'joint pain', 'arthritis', 'cervical', 'sciatica', 'sprain',
+    'arnica', 'paracetamol', 'bruises', 'muscle', 'spondylosis', 'neuralgia',
+    'heel pain', 'fracture', 'inflammation', 'supports'
+  ],
+  heart: [
+    'heart', 'cardiac', 'cardiovascular', 'cholesterol', 'blood pressure',
+    'bp', 'hypertension', 'angina', 'chest pain', 'triglyceride', 'atorvastatin',
+    'lipid', 'statin', 'heart tonics'
+  ],
+  brain: [
+    'brain', 'memory', 'focus', 'mind', 'mental', 'brahmi', 'nervous',
+    'nervous system', 'headache', 'migraine', 'vertigo', 'epilepsy', 'alzheimers',
+    'parkinsons', 'nerve', 'weak memory', 'tonics'
+  ],
+  bone: [
+    'bone', 'joint', 'joint pain', 'arthritis', 'calcium', 'vitamin d',
+    'vitamin d3', 'calcarea', 'rhus tox', 'knee', 'back', 'cervical',
+    'osteoporosis', 'gout', 'cartilage', 'supports', 'splints', 'fracture',
+    'sprain', 'rickets', 'bone and joint'
+  ],
+  joint: [
+    'bone', 'joint', 'joint pain', 'arthritis', 'calcium', 'vitamin d',
+    'knee', 'back', 'cervical', 'osteoporosis', 'gout', 'rhus tox', 'turmeric', 'curcumin'
+  ],
+};
+
+function matchesHealthConcern(product: Product, concernQuery: string): boolean {
+  if (!concernQuery) return true;
+
+  const rawLower = concernQuery.toLowerCase().trim();
+  const normalizedKey = normalizeFilterToken(concernQuery);
+
+  const searchTerms = new Set<string>();
+  searchTerms.add(rawLower);
+  searchTerms.add(normalizedKey);
+
+  if (HEALTH_CONCERN_KEYWORDS[normalizedKey]) {
+    HEALTH_CONCERN_KEYWORDS[normalizedKey].forEach((term) => searchTerms.add(term));
+  }
+
+  rawLower
+    .replace(/&/g, ' ')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2)
+    .forEach((token) => {
+      searchTerms.add(token);
+      if (HEALTH_CONCERN_KEYWORDS[token]) {
+        HEALTH_CONCERN_KEYWORDS[token].forEach((term) => searchTerms.add(term));
+      }
+    });
+
+  const productTextParts: Array<string | undefined> = [
+    product.name,
+    product.brand,
+    product.category,
+    product.subcategory,
+    product.diseaseCategory,
+    product.diseaseSubcategory,
+    product.benefit,
+    product.shortDescription,
+    product.description,
+    product.productType,
+    ...(product.categories || []),
+    ...(product.healthConcerns || []),
+    ...(product.diseasePaths ? product.diseasePaths.flat() : []),
+    ...(product.extraCategoryPaths ? product.extraCategoryPaths.flat() : []),
+  ];
+
+  const combinedProductText = productTextParts
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  for (const term of searchTerms) {
+    if (!term || term.length < 3) continue;
+    if (combinedProductText.includes(term)) {
+      return true;
+    }
+    const normTerm = normalizeFilterToken(term);
+    if (normTerm.length >= 3 && combinedProductText.includes(normTerm)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 const HEADER_CATEGORY_ALIASES: Record<string, string[]> = {
   medicines: ['generic medicine', 'medicines', 'branded', 'generic'],
   nutrition: ['sports nutrition', 'health food and drinks', 'vitamin and dietary supplements', 'organic products', 'green teas', 'digestives'],
@@ -416,15 +536,14 @@ function MedicinesContent() {
 
   useEffect(() => {
     hasAutoScrolledRef.current = false;
-  }, [urlCategory, urlSubcategory, urlSearch]);
+  }, [urlCategory, urlSubcategory, urlSearch, urlConcern]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
       // fetch all, we filter client-side by category group
-      const res = await fetch('/api/products?limit=1000', { cache: 'no-store' });
-      const data = await res.json();
-      setProducts(data.products || []);
+      const products = await fetchAllCatalogProducts();
+      setProducts(products);
     } catch { setProducts([]); }
     finally { setLoading(false); }
   }, []);
@@ -473,6 +592,12 @@ function MedicinesContent() {
       const isLabTestType =
         productBelongsToProductType(p, 'Lab Tests') ||
         equalsIgnoreCase(p.productType, 'lab test');
+
+      // If user arrived via health concern without selecting a specific category in the URL:
+      // Show products across ALL health/medicine categories (Generic, Ayurveda, Homeopathy, Nutrition, Disease, etc.)
+      if (urlConcern && !urlCategory && activeTab === 'medicines') {
+        return !isLabTestType;
+      }
 
       const isGenericMedicineType = productBelongsToProductType(p, 'Generic Medicine');
       const isAyurvedaType = productBelongsToProductType(p, 'Ayurveda Medicine');
@@ -593,13 +718,7 @@ function MedicinesContent() {
         );
 
       // Filter by health concern if specified
-      // Check both healthConcerns array and benefit field
-      const matchConcern =
-        !urlConcern ||
-        (p.healthConcerns || []).some((concern) =>
-          matchesFilterValue(concern, urlConcern)
-        ) ||
-        matchesFilterValue(p.benefit, urlConcern);
+      const matchConcern = !urlConcern || matchesHealthConcern(p, urlConcern);
 
       return matchCat && urlCategoryMatch && urlSubcategoryMatch && matchSearch && matchConcern;
     });
@@ -642,7 +761,7 @@ function MedicinesContent() {
 
   useEffect(() => {
     if (loading) return;
-    if (!urlCategory && !urlSubcategory && !urlSearch) return;
+    if (!urlCategory && !urlSubcategory && !urlSearch && !urlConcern) return;
     if (hasAutoScrolledRef.current) return;
 
     const section = productsSectionRef.current;
@@ -652,7 +771,7 @@ function MedicinesContent() {
     window.requestAnimationFrame(() => {
       section.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [loading, urlCategory, urlSubcategory, urlSearch]);
+  }, [loading, urlCategory, urlSubcategory, urlSearch, urlConcern]);
 
   const col = COLOR_MAP[TAB_CONFIG.find((t) => t.key === activeTab)!.color];
 
@@ -733,12 +852,27 @@ function MedicinesContent() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                {TAB_CONFIG.find((t) => t.key === activeTab)?.label || 'Products'}
+                {urlConcern ? (
+                  <span className="flex items-center gap-2 flex-wrap">
+                    <span>Health Concern:</span>
+                    <span className="capitalize text-emerald-700">{urlConcern}</span>
+                  </span>
+                ) : (
+                  TAB_CONFIG.find((t) => t.key === activeTab)?.label || 'Products'
+                )}
               </h1>
               {urlConcern && (
-                <p className="text-emerald-600 mt-1 text-sm font-medium">
-                  Showing products for: <span className="capitalize">{urlConcern}</span>
-                </p>
+                <div className="flex items-center gap-3 mt-2 flex-wrap">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                    Concern: {urlConcern}
+                  </span>
+                  <Link
+                    href="/medicines"
+                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-600 font-medium underline"
+                  >
+                    ✕ Clear concern filter
+                  </Link>
+                </div>
               )}
               <p className="text-gray-600 mt-1 text-sm">
                 {sortedDisplayed.length} {sortedDisplayed.length === 1 ? 'product' : 'products'} available

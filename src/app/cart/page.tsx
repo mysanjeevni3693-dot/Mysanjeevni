@@ -518,9 +518,9 @@ export default function CartPage() {
           },
           onError: (error: any) => {
             setIsProcessing(false);
-            setPaypalButtonError(error?.message || 'PayPal checkout failed');
-            alert('PayPal checkout failed. Redirecting to homepage.');
-            router.push('/');
+            const message = error?.message || 'PayPal checkout failed. Please try the PayPal button again.';
+            setPaypalButtonError(message);
+            alert(message);
           },
         }).render('#paypal-button-container');
       } catch (error: any) {

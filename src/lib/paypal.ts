@@ -1,5 +1,5 @@
 export function getPaypalMode() {
-  return (process.env.PAYPAL_MODE || 'sandbox').toLowerCase() === 'live' ? 'live' : 'sandbox';
+  return (process.env.PAYPAL_MODE || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
 }
 
 export function getPaypalBaseUrl() {

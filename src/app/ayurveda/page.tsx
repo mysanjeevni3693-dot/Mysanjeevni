@@ -6,8 +6,10 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { addToCartUtil } from '@/lib/cartUtils';
+import { productBelongsToProductType } from '@/lib/productCategoryMatch';
+import { fetchAllCatalogProducts } from '@/lib/fetchCatalogProducts';
+import { buildStorefrontCategories } from '@/lib/storefrontCategories';
 
-const CATEGORIES = ['All', 'Himalaya', 'Organic India', 'Baidyanath', 'Dabur', 'Zandu', 'Charak', 'Aimil', 'Ras & Sindoor', 'Bhasm & Pishti', 'Vati, Gutika & Guggulu', 'Asava Arishta & Kadha', 'Loha & Mandur', 'Churan, Powder, Avaleha & Pak', 'Tailam & Ghrita', 'Chyawanprash', 'Honey', 'Digestives', 'Herbal & Vegetable Juice'];
 const SORT_OPTIONS = [
   { value: 'featured', label: 'Featured' },
   { value: 'price-low', label: 'Price: Low to High' },
@@ -15,27 +17,10 @@ const SORT_OPTIONS = [
   { value: 'rating', label: 'Highest Rated' },
 ];
 
-const AYURVEDA_GROUPED_SUBCATEGORIES: Record<string, string[]> = {
-  Medicines: ['Himalaya', 'Organic India', 'Baidyanath', 'Dabur', 'Zandu', 'Charak', 'Aimil'],
-  'Single Remedies': [
-    'Ras & Sindoor',
-    'Bhasm & Pishti',
-    'Vati & Gutika & Guggulu',
-    'Asava Arishta & Kadha',
-    'Loha & Mandur',
-    'Churan & Powder & Avleha & Pak',
-    'Tailam & Ghrita',
-    'Gold Items',
-    'Special Tablets & Capsules',
-    'Syrups & Tonics',
-  ],
-  'Herbal Food & Juices': ['Chyawanprash', 'Honey', 'Digestives', 'Herbal & Vegetable Juice'],
-};
-
-function getAyurvedaFilterTargets(categoryName: string): string[] {
+function getAyurvedaFilterTargets(categoryName: string, groups: Record<string, string[]>): string[] {
   if (!categoryName || categoryName === 'All') return [];
 
-  for (const [groupName, items] of Object.entries(AYURVEDA_GROUPED_SUBCATEGORIES)) {
+  for (const [groupName, items] of Object.entries(groups)) {
     if (equalsIgnoreCase(groupName, categoryName)) {
       return [groupName, ...items];
     }
@@ -44,8 +29,12 @@ function getAyurvedaFilterTargets(categoryName: string): string[] {
   return [AYURVEDA_CATEGORY_ALIASES[categoryName.trim().toLowerCase()] || categoryName];
 }
 
-function ayurvedaProductMatchesCategory(product: Product, categoryName: string): boolean {
-  const targets = getAyurvedaFilterTargets(categoryName);
+function ayurvedaProductMatchesCategory(
+  product: Product,
+  categoryName: string,
+  groups: Record<string, string[]>
+): boolean {
+  const targets = getAyurvedaFilterTargets(categoryName, groups);
   if (targets.length === 0) return true;
 
   const fields = [
@@ -93,45 +82,12 @@ interface Product {
   currency?: 'INR' | 'USD';
 }
 
-function normalizeCategory(value?: string) {
-  const category = (value || '').trim().toLowerCase();
-  if (category === 'ayurvedic' || category === 'ayurveda') return 'Ayurveda';
-  return value || '';
-}
-
 function normalizeText(value?: string) {
   return (value || '').trim().toLowerCase();
 }
 
 function equalsIgnoreCase(left?: string, right?: string) {
   return normalizeText(left) === normalizeText(right);
-}
-
-function isAyurvedaProduct(product: Product) {
-  const productType = (product.productType || '').trim().toLowerCase();
-  const normalizedCategory = normalizeCategory(product.category);
-  const normalizedBrand = normalizeText(product.brand);
-
-  const hasAyurvedaCategoryMatch = CATEGORIES.some((category) =>
-    equalsIgnoreCase(category, product.category)
-  );
-  const hasAyurvedaBrandMatch = CATEGORIES.some((category) =>
-    equalsIgnoreCase(category, normalizedBrand)
-  );
-
-  // Check if extraCategoryPaths contains Ayurveda Medicine as the first element
-  const hasExtraAyurvedaPath = Array.isArray((product as any).extraCategoryPaths) &&
-    (product as any).extraCategoryPaths.some((path: string[]) => 
-      path[0] && normalizeText(path[0]).toLowerCase() === 'ayurveda medicine'
-    );
-
-  return (
-    productType === 'ayurveda medicine' ||
-    String(normalizedCategory).toLowerCase() === 'ayurveda' ||
-    hasAyurvedaCategoryMatch ||
-    hasAyurvedaBrandMatch ||
-    hasExtraAyurvedaPath
-  );
 }
 
 function AyurvedaContent() {
@@ -146,8 +102,11 @@ function AyurvedaContent() {
   const [sortOrder, setSortOrder] = useState('featured');
   const [cart, setCart] = useState<Record<string, number>>({});
   const [products, setProducts] = useState<Product[]>([]);
+  const [categoryChips, setCategoryChips] = useState<string[]>([]);
+  const [categoryGroups, setCategoryGroups] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const categories = useMemo(() => ['All', ...categoryChips], [categoryChips]);
 
   useEffect(() => {
     const normalizedCategory = AYURVEDA_CATEGORY_ALIASES[urlCategory.trim().toLowerCase()] || urlCategory;
@@ -160,9 +119,19 @@ function AyurvedaContent() {
     const fetchProducts = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/api/products?limit=300', { cache: 'no-store' });
-        const data = await res.json();
-        setProducts(Array.isArray(data.products) ? data.products : []);
+        const [list, categoryResponse] = await Promise.all([
+          fetchAllCatalogProducts({ productType: 'Ayurveda Medicine' }),
+          fetch('/api/categories', { cache: 'no-store' }),
+        ]);
+        const categoryData = await categoryResponse.json().catch(() => ({}));
+        const tree = Array.isArray(categoryData?.tree) ? categoryData.tree : [];
+        const ayurvedaList = list.filter((product: Product) =>
+          productBelongsToProductType(product, 'Ayurveda Medicine')
+        );
+        const { chips, groups } = buildStorefrontCategories(tree, 'Ayurveda Medicine', ayurvedaList);
+        setProducts(ayurvedaList);
+        setCategoryChips(chips);
+        setCategoryGroups(groups);
       } catch {
         setProducts([]);
       } finally {
@@ -178,12 +147,10 @@ function AyurvedaContent() {
     router.push(`/login?redirect=${encodeURIComponent(returnTo)}`);
   };
 
-  const ayurvedaProducts = useMemo(() => products.filter(isAyurvedaProduct), [products]);
-
   const filtered = useMemo(() => {
-    let result = ayurvedaProducts.filter((p) => {
+    let result = products.filter((p) => {
       const matchCat =
-        selectedCategory === 'All' || ayurvedaProductMatchesCategory(p, selectedCategory);
+        selectedCategory === 'All' || ayurvedaProductMatchesCategory(p, selectedCategory, categoryGroups);
       const keyword = search.toLowerCase().trim();
       const concatenatedHealthConcerns = Array.isArray(p.healthConcerns) ? p.healthConcerns.join(' ') : '';
       const matchSearch =
@@ -210,7 +177,7 @@ function AyurvedaContent() {
     else if (sortOrder === 'rating') result.sort((a, b) => (b.rating || 0) - (a.rating || 0));
 
     return result;
-  }, [ayurvedaProducts, selectedCategory, search, sortOrder]);
+  }, [products, selectedCategory, search, sortOrder, categoryGroups]);
 
   useEffect(() => {
     if (loading) return;
@@ -290,7 +257,7 @@ function AyurvedaContent() {
         {/* Horizontal Category Scroll */}
         <div className="max-w-7xl mx-auto px-4 pb-4">
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {CATEGORIES.map((cat) => (
+            {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}

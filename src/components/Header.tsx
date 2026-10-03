@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { LogoImage } from './Logo';
 import CategoryNav from './CategoryNav';
 import { COUNTRY_OPTIONS, normalizeCountryCode, getCountryOption } from '@/lib/countryPreference';
+import { fetchAllCatalogProducts } from '@/lib/fetchCatalogProducts';
 
 declare global {
   interface Window {
@@ -323,15 +324,14 @@ export default function Header() {
     const loadSearchSuggestions = async () => {
       try {
         const [productsResult, doctorsResult, labTestsResult, categoriesResult] = await Promise.allSettled([
-          fetch('/api/products?limit=600', { cache: 'no-store' }),
+          fetchAllCatalogProducts(),
           fetch('/api/doctors', { cache: 'no-store' }),
           fetch('/api/lab-tests?limit=300', { cache: 'no-store' }),
           fetch('/api/categories?mode=config', { cache: 'no-store' }),
         ]);
 
-        if (productsResult.status === 'fulfilled' && productsResult.value.ok) {
-          const productsData = await productsResult.value.json();
-          const products = Array.isArray(productsData?.products) ? productsData.products : [];
+        if (productsResult.status === 'fulfilled') {
+          const products = Array.isArray(productsResult.value) ? productsResult.value : [];
 
           for (const product of products) {
             pushSuggestion(product?.name, 'Product');
@@ -673,15 +673,7 @@ export default function Header() {
 
     setIsSearchRedirecting(true);
     try {
-      const allResponse = await fetch('/api/products?limit=800', { cache: 'no-store' });
-
-      if (!allResponse.ok) {
-        router.push(`/medicines?search=${encodeURIComponent(q)}#products-section`);
-        return;
-      }
-
-      const allData = await allResponse.json();
-      const allProducts = Array.isArray(allData?.products) ? allData.products : [];
+      const allProducts = await fetchAllCatalogProducts();
 
       const normalizedQuery = q
         .toLowerCase()

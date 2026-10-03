@@ -14,6 +14,7 @@ import HealthConcernCarousel from '@/components/HealthConcernCarousel';
 import FeaturedProductsSection from '@/components/FeaturedProductsSection';
 import { usePreferredCountry } from '@/lib/usePreferredCountry';
 import { addToCartUtil } from '@/lib/cartUtils';
+import { fetchAllCatalogProducts } from '@/lib/fetchCatalogProducts';
 
 interface Product {
   _id: number;
@@ -59,6 +60,8 @@ interface PopularSectionProps {
   onAddToCart: (product: Product) => void;
   onBuyNow: (product: Product) => void;
   onProductClick: (productId: string) => void;
+  viewAllHref?: string;
+  viewAllText?: string;
 }
 
 function PopularProductsDisplay({
@@ -71,6 +74,8 @@ function PopularProductsDisplay({
   onAddToCart,
   onBuyNow,
   onProductClick,
+  viewAllHref,
+  viewAllText = 'View All',
 }: PopularSectionProps) {
   const { isIndia } = usePreferredCountry();
   const themes: Record<string, {
@@ -146,14 +151,36 @@ function PopularProductsDisplay({
       <section className="max-w-7xl mx-auto px-4 py-12 w-full">
         <div className={`relative overflow-hidden rounded-3xl border ${theme.ring} ${theme.panel} p-6 sm:p-8`}>
           <div className={`absolute -top-12 -right-8 h-32 w-32 rounded-full blur-2xl ${theme.glow}`} />
-          <div className="mb-5 relative z-10">
-            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${theme.chip}`}>Featured Collection</span>
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 mt-3">{title}</h2>
-            <p className="text-slate-700 mt-2">{subtitle}</p>
+          <div className="mb-5 relative z-10 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+            <div>
+              <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${theme.chip}`}>Featured Collection</span>
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 mt-3">{title}</h2>
+              <p className="text-slate-700 mt-2">{subtitle}</p>
+            </div>
+            {viewAllHref && (
+              <Link
+                href={viewAllHref}
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white ${theme.button} shadow-sm hover:shadow-md transition shrink-0 group`}
+              >
+                <span>{viewAllText}</span>
+                <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
+              </Link>
+            )}
           </div>
           <div className="text-center py-10 text-slate-600 relative z-10 bg-white/65 rounded-2xl border border-white">
             <p className="text-lg font-semibold">No products available yet</p>
             <p className="text-sm mt-1">Admin can mark products as popular to feature them here.</p>
+            {viewAllHref && (
+              <div className="mt-3">
+                <Link
+                  href={viewAllHref}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-xs text-white ${theme.button} shadow-sm`}
+                >
+                  <span>Explore all products</span>
+                  <span>→</span>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -166,10 +193,21 @@ function PopularProductsDisplay({
         <div className={`absolute -top-14 -right-10 h-36 w-36 rounded-full blur-2xl ${theme.glow}`} />
         <div className={`absolute -bottom-16 -left-12 h-40 w-40 rounded-full blur-3xl ${theme.glow}`} />
 
-        <div className="mb-8 flex flex-col gap-3 relative z-10">
-          <span className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${theme.chip}`}>Featured Collection</span>
-          <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900">{title}</h2>
-          <p className="text-slate-700 max-w-2xl text-sm sm:text-base">{subtitle}</p>
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 relative z-10">
+          <div className="flex flex-col gap-2">
+            <span className={`inline-flex w-fit items-center rounded-full px-3 py-1 text-xs font-semibold ${theme.chip}`}>Featured Collection</span>
+            <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900">{title}</h2>
+            <p className="text-slate-700 max-w-2xl text-sm sm:text-base">{subtitle}</p>
+          </div>
+          {viewAllHref && (
+            <Link
+              href={viewAllHref}
+              className={`inline-flex items-center gap-2 self-start sm:self-auto px-5 py-2.5 rounded-xl font-bold text-sm text-white ${theme.button} shadow-sm hover:shadow-md transition-all duration-200 shrink-0 group`}
+            >
+              <span>{viewAllText}</span>
+              <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
+            </Link>
+          )}
         </div>
 
         <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 relative z-10 ${isCompactPopularCard ? 'gap-4' : 'gap-5'}`}>
@@ -283,6 +321,18 @@ function PopularProductsDisplay({
             );
           })}
         </div>
+
+        {viewAllHref && products.length > 0 && (
+          <div className="mt-8 text-center relative z-10 flex justify-center">
+            <Link
+              href={viewAllHref}
+              className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm text-white ${theme.button} shadow-sm hover:shadow-md transition-all duration-200 group`}
+            >
+              <span>{viewAllText}</span>
+              <span className="transition-transform duration-200 group-hover:translate-x-1">→</span>
+            </Link>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -303,9 +353,8 @@ export default function HomePage() {
     const fetchAllProducts = async () => {
       try {
         setLoading(true);
-        const res = await fetch('/api/products?limit=500', { cache: 'no-store' });
-        const data = await res.json();
-        setAllProducts(data.products || []);
+        const products = await fetchAllCatalogProducts();
+        setAllProducts(products);
 
         // Fetch popular lab tests from dedicated endpoint
         const labRes = await fetch('/api/lab-tests/popular?limit=8', { cache: 'no-store' });
@@ -314,7 +363,7 @@ export default function HomePage() {
 
         // Combine product IDs for review summaries
         const allIds = [
-          ...(data.products || []).map((p: Product) => p._id),
+          ...(products || []).map((p: Product) => p._id),
           ...(labData.data || []).map((t: any) => t._id),
         ];
         const productIds = allIds.join(',');
@@ -425,6 +474,8 @@ export default function HomePage() {
         onAddToCart={addToCart}
         onBuyNow={handleBuyNow}
         onProductClick={(id) => router.push(`/medicines/${id}`)}
+        viewAllHref="/medicines#products-section"
+        viewAllText="View All Medicines"
       />
 
       {/* Between Popular Medicines and Ayurveda */}
@@ -455,6 +506,8 @@ export default function HomePage() {
         onAddToCart={addToCart}
         onBuyNow={handleBuyNow}
         onProductClick={(id) => router.push(`/medicines/${id}`)}
+        viewAllHref="/ayurveda#products-section"
+        viewAllText="View All Ayurveda"
       />
 
       {/* Shop by Health Concern Section */}
@@ -490,6 +543,8 @@ export default function HomePage() {
         onAddToCart={addToCart}
         onBuyNow={handleBuyNow}
         onProductClick={(id) => router.push(`/medicines/${id}`)}
+        viewAllHref="/homeopathy#products-section"
+        viewAllText="View All Homeopathy"
       />
 
       {/* Between Homeopathy and Lab Tests */}
@@ -524,6 +579,8 @@ export default function HomePage() {
         onAddToCart={addToCart}
         onBuyNow={() => router.push('/lab-tests')}
         onProductClick={(id) => router.push(`/medicines/${id}`)}
+        viewAllHref="/lab-tests"
+        viewAllText="View All Lab Tests"
       />
 
       {/* Care Journey Section */}

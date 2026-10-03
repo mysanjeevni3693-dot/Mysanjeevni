@@ -627,11 +627,22 @@ export default function AdminMedicines() {
   const fetchProducts = useCallback(async () => {
     setMedLoading(true);
     try {
-      const q = new URLSearchParams({ limit: '200' });
-      if (medSearch) q.set('search', medSearch);
-      const res = await fetch(`/api/admin/products?${q}`);
-      const data = await res.json();
-      setMedicines(data.products || []);
+      const pageSize = 1000;
+      let page = 1;
+      const collected: Medicine[] = [];
+      let total = 0;
+      do {
+        const q = new URLSearchParams({ limit: String(pageSize), page: String(page) });
+        if (medSearch) q.set('search', medSearch);
+        const res = await fetch(`/api/admin/products?${q}`, { cache: 'no-store' });
+        const data = await res.json();
+        const batch = Array.isArray(data.products) ? data.products : [];
+        total = typeof data.total === 'number' ? data.total : collected.length + batch.length;
+        collected.push(...batch);
+        if (batch.length < pageSize || collected.length >= total) break;
+        page += 1;
+      } while (collected.length < total && page <= 50);
+      setMedicines(collected);
     } catch {}
     setMedLoading(false);
   }, [medSearch]);
@@ -640,11 +651,22 @@ export default function AdminMedicines() {
   const fetchLabTests = useCallback(async () => {
     setLabLoading(true);
     try {
-      const q = new URLSearchParams({ limit: '200', productType: 'Lab Tests' });
-      if (labSearch) q.set('search', labSearch);
-      const res = await fetch(`/api/admin/products?${q}`);
-      const data = await res.json();
-      setLabTests(data.products || []);
+      const pageSize = 1000;
+      let page = 1;
+      const collected: Medicine[] = [];
+      let total = 0;
+      do {
+        const q = new URLSearchParams({ limit: String(pageSize), page: String(page), productType: 'Lab Tests' });
+        if (labSearch) q.set('search', labSearch);
+        const res = await fetch(`/api/admin/products?${q}`, { cache: 'no-store' });
+        const data = await res.json();
+        const batch = Array.isArray(data.products) ? data.products : [];
+        total = typeof data.total === 'number' ? data.total : collected.length + batch.length;
+        collected.push(...batch);
+        if (batch.length < pageSize || collected.length >= total) break;
+        page += 1;
+      } while (collected.length < total && page <= 50);
+      setLabTests(collected);
     } catch {}
     setLabLoading(false);
   }, [labSearch]);
@@ -746,10 +768,19 @@ export default function AdminMedicines() {
       }
       
       const payload = { name: prodForm.name, brand: prodForm.brand, category: prodForm.categoryPath[0] || prodForm.category, subcategory: prodForm.categoryPath[1] || prodForm.subcategory || undefined, categories: prodForm.categoryPath, extraCategoryPaths: (prodForm.extraCategoryPaths || []).map((path) => path.map((value) => value.trim()).filter(Boolean)).filter((path) => path.length > 0), diseasePaths: prodForm.diseasePaths || [], diseaseCategory: prodForm.diseasePaths?.[0]?.[0] || prodForm.diseaseCategory || undefined, diseaseSubcategory: prodForm.diseasePaths?.[0]?.[1] || prodForm.diseaseSubcategory || undefined, productType: prodForm.productType || 'Generic Medicine', price: Number(prodForm.price), usdPrice: Number(prodForm.usdPrice), mrp: prodForm.mrp ? Number(prodForm.mrp) : undefined, stock: Number(prodForm.stock) || 0, description: prodForm.description, shortDescription: prodForm.shortDescription || undefined, safetyInformation: prodForm.safetyInformation || undefined, specifications: prodForm.specifications || undefined, benefit: prodForm.benefit || undefined, requiresPrescription: prodForm.requiresPrescription, images: images, image: images.length > 0 ? images[0] : undefined, isActive: true, popularSections: prodForm.popularSections || [], potency: prodForm.potency || undefined, quantity: prodForm.quantity ? Number(prodForm.quantity) : undefined, quantityUnit: prodForm.quantityUnit || 'None' };
-      if (editMed) await fetch(`/api/admin/products/${editMed._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      else await fetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = editMed
+        ? await fetch(`/api/admin/products/${editMed._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        : await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resData = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(resData.error || 'Failed to save product. Please ensure required fields are filled.');
+        setMedSaving(false);
+        return;
+      }
       setShowProdForm(false); setEditMed(null); setImages([]); await fetchProducts();
-    } catch {}
+    } catch (err: any) {
+      alert(err?.message || 'Error occurred while saving product');
+    }
     setMedSaving(false);
   };
   const deleteProd = async (id: string | number) => {
@@ -929,8 +960,15 @@ export default function AdminMedicines() {
     }
     const payload = { name: labForm.name, category: labForm.category, price: Number(labForm.price), mrp: labForm.mrp ? Number(labForm.mrp) : undefined, description: labForm.description, benefit: labForm.description, image: labImageUrl || undefined, stock: 9999, productType: 'Lab Tests', isActive: true, isPopular: labForm.popular, isPopularLabTests: labForm.popular };
     try {
-      if (editLab) await fetch(`/api/admin/products/${editLab._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      else await fetch('/api/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = editLab
+        ? await fetch(`/api/admin/products/${editLab._id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+        : await fetch('/api/admin/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const resData = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(resData.error || 'Failed to save lab test');
+        setLabSaving(false);
+        return;
+      }
       setShowLabForm(false); setEditLab(null); setLabImageUrl(''); await fetchLabTests();
     } catch (err) {
       console.error('Error saving lab test:', err);

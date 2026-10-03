@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#059669" />
+    <title>Offline · MySanjeevni</title>
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: #f0fdf4;
+        color: #064e3b;
+      }
+      main {
+        width: min(440px, 100%);
+        background: #fff;
+        border: 1px solid #a7f3d0;
+        border-radius: 16px;
+        padding: 28px 24px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(6, 78, 59, 0.08);
+      }
+      h1 { margin: 0 0 8px; font-size: 1.4rem; }
+      p { margin: 0 0 12px; color: #065f46; line-height: 1.5; font-size: 0.95rem; }
+      button {
+        margin-top: 8px;
+        border: 0;
+        border-radius: 999px;
+        background: #059669;
+        color: #fff;
+        font-weight: 700;
+        padding: 12px 20px;
+        cursor: pointer;
+      }
+      button:hover { background: #047857; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>You are offline</h1>
+      <p>MySanjeevni needs an internet connection for browsing, login, orders, payments, and your account data.</p>
+      <p>Reconnect, then try again. Nothing on this page is saved as your medical or payment information.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>
